@@ -90,7 +90,7 @@ function isRetryable(status: number): boolean {
   return status === 429 || status === 503;
 }
 
-
+export default async function handler(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
