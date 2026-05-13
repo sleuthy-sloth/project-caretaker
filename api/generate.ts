@@ -108,14 +108,14 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ error: "Method not allowed" }, 405);
   }
 
-  let body: { prompt?: unknown; history?: unknown };
+  let body: { prompt?: unknown; history?: unknown; cloudModel?: unknown };
   try {
     body = await req.json();
   } catch {
     return json({ error: "Invalid JSON body" }, 400);
   }
 
-  const { prompt, history = [] } = body;
+  const { prompt, history = [], cloudModel = "cloud-auto" } = body;
 
   if (typeof prompt !== "string" || !prompt.trim()) {
     return json({ error: "Missing or empty prompt" }, 400);
@@ -137,9 +137,14 @@ export default async function handler(req: Request): Promise<Response> {
   // but are rejected by Gemini's OpenAI-compatible endpoint.
   const penaltyParams = { frequency_penalty: 0.7, presence_penalty: 0.4 };
 
+  const selectedCloudModel = typeof cloudModel === "string" ? cloudModel : "cloud-auto";
+  const allowGemini = selectedCloudModel === "cloud-auto" || selectedCloudModel === "cloud-gemini";
+  const allowOpenRouter = selectedCloudModel === "cloud-auto" || selectedCloudModel === "cloud-openrouter";
+  const allowGroq = selectedCloudModel === "cloud-auto" || selectedCloudModel === "cloud-groq";
+
   // 1. Try Gemini models in order
   const geminiKey: string | undefined = penv?.GEMINI_API_KEY;
-  if (geminiKey) {
+  if (allowGemini && geminiKey) {
     // Gemini does not accept frequency_penalty / presence_penalty — omit them
     for (const model of GEMINI_MODELS) {
       const result = await callOpenAICompatible(GEMINI_API_URL, geminiKey, model, messages);
@@ -152,7 +157,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   // 2. Gemini unavailable (or unconfigured) → try OpenRouter
   const openrouterKey: string | undefined = penv?.OPENROUTER_API_KEY;
-  if (openrouterKey) {
+  if (allowOpenRouter && openrouterKey) {
     // OpenRouter's free model pool often includes models that reject response_format.
     // Setting it to undefined removes it from the JSON payload.
     const openRouterParams = { ...penaltyParams, response_format: undefined };
@@ -165,7 +170,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   // 3. OpenRouter unavailable (or unconfigured) → try Groq as final fallback
   const groqKey: string | undefined = penv?.GROQ_API_KEY;
-  if (groqKey) {
+  if (allowGroq && groqKey) {
     const result = await callOpenAICompatible(GROQ_API_URL, groqKey, GROQ_MODEL, messages, penaltyParams);
     if (result.ok) return json({ content: result.content });
     if (isErrorResult(result)) {

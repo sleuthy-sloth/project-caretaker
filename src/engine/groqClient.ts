@@ -3,12 +3,13 @@ import { parseAIResponse, type ParsedAIResponse } from "./responseParser";
 
 export async function sendGroqMessage(
   prompt: string,
-  history: ChatHistoryMessage[]
+  history: ChatHistoryMessage[],
+  cloudModel: string,
 ): Promise<ParsedAIResponse> {
   const response = await fetch("/api/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, history }),
+    body: JSON.stringify({ prompt, history, cloudModel }),
   });
 
   if (!response.ok) {
