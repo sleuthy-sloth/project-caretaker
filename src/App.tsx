@@ -349,12 +349,12 @@ export default function App() {
   };
 
   if (!authInitialized) {
-    return <div className="h-screen w-full bg-[#050507] text-cyan-400 flex items-center justify-center font-mono">INITIALIZING...</div>;
+    return <div className="h-dvh w-full bg-[#050507] text-cyan-400 flex items-center justify-center font-mono">INITIALIZING...</div>;
   }
 
   if (!user) {
     return (
-      <div className="h-screen w-full bg-[#050507] text-[#a0aec0] flex flex-col items-center justify-center font-mono relative overflow-hidden">
+      <div className="h-dvh w-full bg-[#050507] text-[#a0aec0] flex flex-col items-center justify-center font-mono relative overflow-hidden">
          <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-[0.03]" style={{ backgroundImage: "repeating-linear-gradient(0deg, #fff, #fff 1px, transparent 1px, transparent 2px)" }}></div>
          <div className="z-10 text-center animate-pulse mb-8 text-cyan-500/40 text-xs tracking-widest uppercase">
             [ SYSTEM LOCKED ]
@@ -386,7 +386,7 @@ export default function App() {
       : AVAILABLE_MODELS;
 
     return (
-      <div className="h-screen w-full bg-[#050507] text-[#a0aec0] flex flex-col items-center justify-center font-mono relative overflow-hidden p-4">
+      <div className="min-h-dvh w-full bg-[#050507] text-[#a0aec0] flex flex-col items-center justify-center font-mono relative p-4 py-8 overflow-y-auto">
         <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-[0.03]" style={{ backgroundImage: "repeating-linear-gradient(0deg, #fff, #fff 1px, transparent 1px, transparent 2px)" }}></div>
         <div className="z-10 text-center mb-6 text-cyan-500/40 text-xs tracking-widest uppercase">
            [ SELECT ORACLE ENGINE MODEL ]
@@ -420,7 +420,7 @@ export default function App() {
 
   if (!isReady) {
     return (
-      <div className="h-screen w-full bg-[#050507] text-[#a0aec0] flex flex-col items-center justify-center font-mono relative overflow-hidden">
+      <div className="h-dvh w-full bg-[#050507] text-[#a0aec0] flex flex-col items-center justify-center font-mono relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-[0.03]" style={{ backgroundImage: "repeating-linear-gradient(0deg, #fff, #fff 1px, transparent 1px, transparent 2px)" }}></div>
         <div className="z-10 text-center mb-4 text-cyan-500/40 text-xs tracking-widest uppercase animate-pulse">
            [ INITIALIZING ORACLE ENGINE ]
@@ -434,17 +434,17 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen w-full overflow-hidden font-mono text-[#a0aec0] bg-[#050507]">
+    <div className="flex flex-col h-dvh w-full overflow-hidden font-mono text-[#a0aec0] bg-[#050507]">
       {/* Header */}
       <div className="flex items-center justify-between px-4 md:px-6 py-3 border-b border-cyan-900/30 bg-black/40">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setShowSidebar(true)}
-            className="md:hidden text-cyan-400/70 hover:text-cyan-300 transition-colors cursor-pointer"
+            className="md:hidden -ml-2 p-2 text-cyan-400/80 hover:text-cyan-300 transition-colors cursor-pointer"
             title="Open ship status"
             aria-label="Open ship status panel"
           >
-            <PanelLeft className="w-4 h-4" />
+            <PanelLeft className="w-5 h-5" />
           </button>
           <Ship className="w-4 h-4 text-cyan-500" />
           <span className="text-cyan-400 font-bold tracking-widest text-sm uppercase hidden sm:inline">Aegis Core // GSS Theseus</span>
