@@ -80,7 +80,11 @@ async function callOpenAICompatible(
   return { ok: true, content };
 }
 
-export default async function handler(req: Request): Promise<Response> {
+function isRetryable(status: number): boolean {
+  return status === 429 || status === 503;
+}
+
+
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
@@ -123,18 +127,18 @@ export default async function handler(req: Request): Promise<Response> {
   if (groqKey) {
     const result = await callOpenAICompatible(GROQ_API_URL, groqKey, GROQ_MODEL, messages, penaltyParams);
     if (result.ok) return json({ content: result.content });
-    if (result.status !== 429) return json({ error: result.error }, result.status);
-    // 429 → fall through to next provider
+    if (!isRetryable(result.status)) return json({ error: result.error }, result.status);
+    // 429/503 → fall through to next provider
   }
 
-  // 2. Groq rate-limited (or unconfigured) → try Google Gemini
+  // 2. Groq rate-limited/unavailable (or unconfigured) → try Google Gemini
   const geminiKey: string | undefined = penv?.GEMINI_API_KEY;
   if (geminiKey) {
     // Gemini does not accept frequency_penalty / presence_penalty — omit them
     const result = await callOpenAICompatible(GEMINI_API_URL, geminiKey, GEMINI_MODEL, messages);
     if (result.ok) return json({ content: result.content });
-    if (result.status !== 429) return json({ error: result.error }, result.status);
-    // 429 → fall through to OpenRouter
+    if (!isRetryable(result.status)) return json({ error: result.error }, result.status);
+    // 429/503 → fall through to OpenRouter
   }
 
   // 3. Gemini rate-limited (or unconfigured) → try OpenRouter (auto-routes to live free models)
