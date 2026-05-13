@@ -1,8 +1,16 @@
-import { MLCEngine, InitProgressCallback } from "@mlc-ai/web-llm";
+import { MLCEngine, InitProgressCallback, prebuiltAppConfig } from "@mlc-ai/web-llm";
 import { SYSTEM_ORACLE_PROMPT } from "./systemPrompt";
 import { parseAIResponse } from "./responseParser";
 
 let engine: MLCEngine;
+
+// Safari/iOS workers stall when WebLLM tries to write large model shards to
+// IndexedDB — the cache write blocks the fetch pipeline and progress freezes
+// at "fetching params". Disabling the cache forces a direct streaming download
+// which works correctly on iOS Safari.
+function isIOS(): boolean {
+  return /iPhone|iPad|iPod/i.test((self as unknown as { navigator: Navigator }).navigator?.userAgent ?? "");
+}
 
 self.onmessage = async (event) => {
   const { type, payload } = event.data;
@@ -22,7 +30,12 @@ self.onmessage = async (event) => {
       };
 
       engine.setInitProgressCallback(initProgressCallback);
-      await engine.reload(payload.modelId);
+
+      const appConfig = isIOS()
+        ? { ...prebuiltAppConfig, useIndexedDBCache: false }
+        : prebuiltAppConfig;
+
+      await engine.reload(payload.modelId, undefined, appConfig);
       self.postMessage({ type: "INIT_COMPLETE" });
     } catch (error) {
       self.postMessage({ type: "ERROR", payload: String(error) });

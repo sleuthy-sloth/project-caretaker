@@ -88,7 +88,7 @@ export function useCaretakerAI() {
       setIsInitializing(false);
       setIsReady(true);
       setDownloadProgress(1);
-      setProgressText("GROQ CLOUD CONNECTED");
+      setProgressText("CLOUD AI CONNECTED");
       setError(null);
       return;
     }
