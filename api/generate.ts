@@ -9,13 +9,13 @@ const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 // Tried in order; next is attempted only if the current returns 429
 const OPENROUTER_FREE_MODELS = [
   "meta-llama/llama-3.3-70b-instruct:free",
-  "google/gemma-3-27b-it:free",
+  "qwen/qwen-2.5-72b-instruct:free",
   "mistralai/mistral-7b-instruct:free",
 ];
 
-// Uses Google's OpenAI-compatible endpoint; update GEMINI_MODEL if a newer lite model is available
+// Uses Google's OpenAI-compatible endpoint
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-const GEMINI_MODEL = "gemini-2.5-flash-lite";
+const GEMINI_MODEL = "gemini-3.1-flash-lite";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
