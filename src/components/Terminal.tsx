@@ -50,22 +50,32 @@ export function Terminal({ logs, logsLoaded, onCommand, isGenerating, suggestedA
   // Typewriter effect state
   const [displayedText, setDisplayedText] = useState<{ [id: string]: string }>({});
   const pendingAnimations = useRef(new Set<string>());
+  const completedIds = useRef(new Set<string>());
+  const fullTextById = useRef(new Map<string, string>());
 
   const startAnimation = useCallback((logId: string, fullText: string) => {
     if (pendingAnimations.current.has(logId)) return;
     pendingAnimations.current.add(logId);
+    fullTextById.current.set(logId, fullText);
 
     let index = 0;
-    const speed = fullText.length > 500 ? 5 : 15; // faster for long text
     const step = () => {
+      // Force-complete if marked
+      if (completedIds.current.has(logId)) {
+        setDisplayedText(prev => ({ ...prev, [logId]: fullText }));
+        pendingAnimations.current.delete(logId);
+        return;
+      }
       if (index < fullText.length) {
-        const chunk = fullText[index];
-        index++;
+        // Chunked rendering — render multiple chars per frame for speed
+        const chunkSize = fullText.length > 500 ? 6 : 3;
+        const chunk = fullText.slice(index, index + chunkSize);
+        index += chunkSize;
         setDisplayedText(prev => ({
           ...prev,
           [logId]: (prev[logId] || '') + chunk,
         }));
-        const delay = chunk === '\n' ? speed * 4 : speed;
+        const delay = chunk.includes('\n') ? 10 : 3;
         setTimeout(step, delay);
       } else {
         pendingAnimations.current.delete(logId);
@@ -74,11 +84,20 @@ export function Terminal({ logs, logsLoaded, onCommand, isGenerating, suggestedA
     step();
   }, []);
 
+  const completeAllAnimations = useCallback(() => {
+    pendingAnimations.current.forEach(id => completedIds.current.add(id));
+  }, []);
+
   // Detect new logs and start typewriter if needed
   useEffect(() => {
+    // If the latest log is a USER message, force-complete any in-flight AI animations
+    const latest = logs[logs.length - 1];
+    if (latest?.sender === 'USER') {
+      completeAllAnimations();
+    }
+
     logs.forEach(log => {
       if (log.sender === 'USER') {
-        // Show user text instantly
         setDisplayedText(prev => {
           if (prev[log.id] === undefined) {
             return { ...prev, [log.id]: log.text };
@@ -92,13 +111,12 @@ export function Terminal({ logs, logsLoaded, onCommand, isGenerating, suggestedA
           }
           return prev;
         });
-        // Start animation on next tick to ensure state is initialized
         if (!pendingAnimations.current.has(log.id)) {
           setTimeout(() => startAnimation(log.id, log.text), 50);
         }
       }
     });
-  }, [logs, startAnimation]);
+  }, [logs, startAnimation, completeAllAnimations]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -123,7 +141,12 @@ export function Terminal({ logs, logsLoaded, onCommand, isGenerating, suggestedA
       <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-[0.03]"
            style={{ backgroundImage: "repeating-linear-gradient(0deg, #fff, #fff 1px, transparent 1px, transparent 2px)" }}></div>
 
-      <div className="flex-1 font-mono text-sm leading-relaxed overflow-y-auto z-10 flex flex-col gap-4" ref={scrollRef}>
+      <div
+        className="flex-1 font-mono text-sm leading-relaxed overflow-y-auto z-10 flex flex-col gap-4"
+        ref={scrollRef}
+        onClick={completeAllAnimations}
+        title="Click to skip typewriter animation"
+      >
         {/* Loading state */}
         {!logsLoaded && (
           <div className="flex flex-col items-center justify-center h-full text-[10px] text-cyan-600 uppercase tracking-widest">
