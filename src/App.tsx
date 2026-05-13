@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Terminal, LogEntry } from './components/Terminal';
-import { useCaretakerAI, AIResponse, ChatHistoryMessage } from './hooks/useCaretakerAI';
+import { useCaretakerAI, AIResponse, ChatHistoryMessage, CLOUD_MODEL_ID } from './hooks/useCaretakerAI';
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
-import { signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
-import { Skull, AlertTriangle, RotateCcw, Ship } from 'lucide-react';
+import { Skull, AlertTriangle, RotateCcw, Ship, LogOut, PanelLeft, X } from 'lucide-react';
 
 interface ShipState {
   hull: number;
@@ -27,24 +27,31 @@ interface ModelOption {
 
 const AVAILABLE_MODELS: ModelOption[] = [
   {
+    id: CLOUD_MODEL_ID,
+    name: "Groq Cloud",
+    description: "Runs on Groq's servers via Llama 3.3 70B. Best narrative. Instant start, no download. Requires internet.",
+    recommended: true,
+    mobileSafe: true
+  },
+  {
     id: "Qwen2.5-0.5B-Instruct-q4f16_1-MLC",
     name: "Qwen 2.5 0.5B",
-    description: "Tiny (~360MB). Loads on most mobile devices. Narrative is basic but functional.",
+    description: "Tiny local model (~360MB). Runs offline in browser via WebGPU. Basic narrative.",
     recommended: false,
     mobileSafe: true
   },
   {
     id: "Llama-3.2-1B-Instruct-q4f16_1-MLC",
     name: "Llama 3.2 1B",
-    description: "Small (~880MB). Better than 0.5B; still mobile-capable on recent phones.",
+    description: "Small local model (~880MB). Runs offline via WebGPU. Better than 0.5B on recent phones.",
     recommended: false,
     mobileSafe: true
   },
   {
     id: "gemma-2b-it-q4f32_1-MLC",
     name: "Gemma 2B",
-    description: "Mid-size (~1.4GB). Solid narrative on desktop. Will crash most phones.",
-    recommended: true,
+    description: "Mid-size local model (~1.4GB). Solid offline narrative on desktop. Will crash most phones.",
+    recommended: false,
     mobileSafe: false
   },
   {
@@ -107,13 +114,14 @@ export default function App() {
   const [activeAlarms, setActiveAlarms] = useState<ActiveAlarm[]>([]);
   const [suggestedActions, setSuggestedActions] = useState<string[]>([]);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
 
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const initializationTriggered = useRef(false);
 
-  const { isInitializing, downloadProgress, progressText, isGenerating, isReady, error, initAI, sendMessage } = useCaretakerAI();
+  const { isInitializing, downloadProgress, progressText, isGenerating, isReady, isCloudMode, error, initAI, sendMessage } = useCaretakerAI();
 
   // Auth Effect
   useEffect(() => {
@@ -299,6 +307,22 @@ export default function App() {
     }
   }, [isReady, logsLoaded, logs.length, selectedModel]);
 
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      setSelectedModel(null);
+      setShipState(null);
+      setLogs([]);
+      setLogsLoaded(false);
+      setActiveAlarms([]);
+      setSuggestedActions([]);
+      setShowSidebar(false);
+      initializationTriggered.current = false;
+    } catch (err) {
+      console.error('Sign out failed:', err);
+    }
+  };
+
   // Game reset
   const handleReset = async () => {
     if (!user) return;
@@ -414,14 +438,24 @@ export default function App() {
       {/* Header */}
       <div className="flex items-center justify-between px-4 md:px-6 py-3 border-b border-cyan-900/30 bg-black/40">
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowSidebar(true)}
+            className="md:hidden text-cyan-400/70 hover:text-cyan-300 transition-colors cursor-pointer"
+            title="Open ship status"
+            aria-label="Open ship status panel"
+          >
+            <PanelLeft className="w-4 h-4" />
+          </button>
           <Ship className="w-4 h-4 text-cyan-500" />
           <span className="text-cyan-400 font-bold tracking-widest text-sm uppercase hidden sm:inline">Aegis Core // GSS Theseus</span>
           <span className="text-cyan-400 font-bold tracking-widest text-xs uppercase sm:hidden">Aegis Core</span>
         </div>
         <div className="flex items-center gap-4 md:gap-8 text-[10px] uppercase tracking-tighter">
           <div className="hidden sm:flex flex-col">
-            <span className="opacity-40 text-xs">WebGPU</span>
-            <span className="text-emerald-400">Active</span>
+            <span className="opacity-40 text-xs">{isCloudMode ? "Engine" : "WebGPU"}</span>
+            <span className={isCloudMode ? "text-violet-400" : "text-emerald-400"}>
+              {isCloudMode ? "Groq Cloud" : "Active"}
+            </span>
           </div>
           <div className="hidden md:flex flex-col">
             <span className="opacity-40 text-xs">Model</span>
@@ -471,8 +505,33 @@ export default function App() {
 
       {/* Main layout */}
       <div className="flex flex-1 overflow-hidden relative">
-        {/* Sidebar */}
-        <aside className="hidden md:flex w-64 border-r border-cyan-900/20 bg-black/20 p-6 flex-col gap-6 overflow-y-auto">
+        {/* Mobile backdrop */}
+        {showSidebar && (
+          <div
+            onClick={() => setShowSidebar(false)}
+            className="md:hidden fixed inset-0 bg-black/70 z-30"
+            aria-hidden="true"
+          />
+        )}
+
+        {/* Sidebar (static on desktop, slide-out drawer on mobile) */}
+        <aside
+          className={`fixed md:static inset-y-0 left-0 w-72 md:w-64 z-40 border-r border-cyan-900/20 bg-[#050507] md:bg-black/20 p-6 flex flex-col gap-6 overflow-y-auto transition-transform duration-200 ${
+            showSidebar ? 'translate-x-0' : '-translate-x-full'
+          } md:translate-x-0`}
+        >
+          {/* Mobile close button */}
+          <div className="md:hidden flex justify-between items-center -mt-2">
+            <span className="text-[10px] text-cyan-500/60 uppercase tracking-widest font-bold">Ship Status</span>
+            <button
+              onClick={() => setShowSidebar(false)}
+              className="text-cyan-400/70 hover:text-cyan-300 cursor-pointer"
+              aria-label="Close ship status panel"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
           {/* Ship Vitality */}
           <section>
             <h3 className="text-[10px] text-cyan-500/60 uppercase font-bold mb-4 tracking-widest">Ship Vitality</h3>
@@ -533,16 +592,32 @@ export default function App() {
           )}
 
           {/* Engine Info */}
-          <section className="mt-auto">
+          <section className="mt-auto space-y-3">
             <div className="p-4 border border-cyan-900/40 rounded bg-cyan-950/10">
               <h4 className="text-[10px] uppercase text-cyan-400 mb-2">Engine Status</h4>
               <div className="text-[9px] leading-relaxed opacity-60">
                 Ship: GSS Theseus<br/>
                 Year: 2173<br/>
-                Engine: @mlc-ai/web-llm<br/>
-                VRAM: Auto / WebGPU<br/>
+                Engine: {isCloudMode ? 'Groq Cloud' : '@mlc-ai/web-llm'}<br/>
+                Mode: {isCloudMode ? 'Remote inference' : 'Local / WebGPU'}<br/>
                 Status: <span className="text-emerald-400">Ready</span>
               </div>
+            </div>
+
+            {/* Account / session controls */}
+            <div className="space-y-2">
+              {user?.email && (
+                <div className="text-[9px] opacity-50 truncate" title={user.email}>
+                  Signed in as {user.email}
+                </div>
+              )}
+              <button
+                onClick={handleSignOut}
+                className="w-full flex items-center justify-center gap-2 border border-cyan-500/30 text-cyan-400/80 hover:text-cyan-300 hover:border-cyan-400/60 px-3 py-2 text-[10px] uppercase tracking-widest transition-colors cursor-pointer"
+              >
+                <LogOut className="w-3 h-3" />
+                Sign Out
+              </button>
             </div>
           </section>
         </aside>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { sendGroqMessage } from '../engine/groqClient';
 
 export interface ShipStatus {
   power_level: number;
@@ -18,6 +19,8 @@ export interface ChatHistoryMessage {
   content: string;
 }
 
+export const CLOUD_MODEL_ID = "groq-cloud";
+
 export function useCaretakerAI() {
   const workerRef = useRef<Worker | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
@@ -26,13 +29,13 @@ export function useCaretakerAI() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const [isCloudMode, setIsCloudMode] = useState(false);
 
-  // We'll queue prompts if the user sends something while generating
   const resolveRef = useRef<((val: AIResponse) => void) | null>(null);
   const rejectRef = useRef<((err: string) => void) | null>(null);
+  const isCloudRef = useRef(false);
 
   useEffect(() => {
-    // Initialize Web Worker
     workerRef.current = new Worker(new URL('../engine/webLlmWorker.ts', import.meta.url), {
       type: 'module'
     });
@@ -78,15 +81,45 @@ export function useCaretakerAI() {
   }, []);
 
   const initAI = useCallback((modelId: string) => {
+    if (modelId === CLOUD_MODEL_ID) {
+      isCloudRef.current = true;
+      setIsCloudMode(true);
+      setIsInitializing(false);
+      setIsReady(true);
+      setDownloadProgress(1);
+      setProgressText("GROQ CLOUD CONNECTED");
+      setError(null);
+      return;
+    }
+
+    isCloudRef.current = false;
+    setIsCloudMode(false);
     if (!workerRef.current) return;
     setIsInitializing(true);
     setIsReady(false);
     setError(null);
     setDownloadProgress(0);
+    setProgressText("");
     workerRef.current.postMessage({ type: 'INIT', payload: { modelId } });
   }, []);
 
   const sendMessage = useCallback((prompt: string, history: ChatHistoryMessage[] = []): Promise<AIResponse> => {
+    if (isCloudRef.current) {
+      setIsGenerating(true);
+      setError(null);
+      return sendGroqMessage(prompt, history)
+        .then(response => {
+          setIsGenerating(false);
+          return response;
+        })
+        .catch(err => {
+          setIsGenerating(false);
+          const msg = err instanceof Error ? err.message : String(err);
+          setError(msg);
+          throw new Error(msg);
+        });
+    }
+
     return new Promise((resolve, reject) => {
       if (!workerRef.current || !isReady) {
         reject("AI Core is currently offline or initializing.");
@@ -111,6 +144,7 @@ export function useCaretakerAI() {
     progressText,
     isGenerating,
     isReady,
+    isCloudMode,
     error,
     initAI,
     sendMessage
