@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 export interface LogEntry {
   id: string;
@@ -9,77 +9,108 @@ export interface LogEntry {
 
 interface TerminalProps {
   logs: LogEntry[];
+  logsLoaded: boolean;
   onCommand: (command: string) => void;
   isGenerating: boolean;
+  suggestedActions?: string[];
 }
 
-export function Terminal({ logs, onCommand, isGenerating }: TerminalProps) {
-  const [inputValue, setInputValue] = useState("");
-  const scrollRef = useRef<HTMLDivElement>(null);
-  
-  // Typewriter effect states
-  const [displayedText, setDisplayedText] = useState<{ [id: string]: string }>({});
+const LOADING_MESSAGES = [
+  "Decrypting terminal buffer...",
+  "Syncing with Aegis Core...",
+  "Restoring from backup node...",
+  "Calibrating display matrix..."
+];
 
+export function Terminal({ logs, logsLoaded, onCommand, isGenerating, suggestedActions = [] }: TerminalProps) {
+  const [inputValue, setInputValue] = useState("");
+  const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Rotate loading messages
+  useEffect(() => {
+    if (logsLoaded) return;
+    const interval = setInterval(() => {
+      setLoadingMessageIndex(prev => (prev + 1) % LOADING_MESSAGES.length);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [logsLoaded]);
+
+  // Auto-scroll to bottom
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [logs, displayedText]);
-
-  // Handle typewriter effect for AI/SYSTEM logs
-  useEffect(() => {
-    const newDisplayed = { ...displayedText };
-    let needsUpdate = false;
-
-    logs.forEach(log => {
-      if (!newDisplayed[log.id] && newDisplayed[log.id] !== "") {
-        if (log.sender === 'USER') {
-          // Users don't get typewriter
-          newDisplayed[log.id] = log.text;
-          needsUpdate = true;
-        } else {
-          // Initialize empty string for typewriter
-          newDisplayed[log.id] = "";
-          needsUpdate = true;
+      requestAnimationFrame(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
         }
-      }
-    });
-
-    if (needsUpdate) {
-      setDisplayedText(newDisplayed);
+      });
     }
   }, [logs]);
 
-  useEffect(() => {
-    let timeoutId: NodeJS.Timeout;
+  // Typewriter effect state
+  const [displayedText, setDisplayedText] = useState<{ [id: string]: string }>({});
+  const pendingAnimations = useRef(new Set<string>());
 
-    const activeLog = logs.find(log => 
-      (log.sender === 'AI' || log.sender === 'SYSTEM') && 
-      displayedText[log.id] !== undefined && 
-      displayedText[log.id].length < log.text.length
-    );
+  const startAnimation = useCallback((logId: string, fullText: string) => {
+    if (pendingAnimations.current.has(logId)) return;
+    pendingAnimations.current.add(logId);
 
-    if (activeLog) {
-      const currentText = displayedText[activeLog.id];
-      const nextChar = activeLog.text[currentText.length];
-      
-      timeoutId = setTimeout(() => {
+    let index = 0;
+    const speed = fullText.length > 500 ? 5 : 15; // faster for long text
+    const step = () => {
+      if (index < fullText.length) {
+        const chunk = fullText[index];
+        index++;
         setDisplayedText(prev => ({
           ...prev,
-          [activeLog.id]: prev[activeLog.id] + nextChar
+          [logId]: (prev[logId] || '') + chunk,
         }));
-      }, 15); // Typewriter speed (15ms per character)
-    }
+        const delay = chunk === '\n' ? speed * 4 : speed;
+        setTimeout(step, delay);
+      } else {
+        pendingAnimations.current.delete(logId);
+      }
+    };
+    step();
+  }, []);
 
-    return () => clearTimeout(timeoutId);
-  }, [displayedText, logs]);
+  // Detect new logs and start typewriter if needed
+  useEffect(() => {
+    logs.forEach(log => {
+      if (log.sender === 'USER') {
+        // Show user text instantly
+        setDisplayedText(prev => {
+          if (prev[log.id] === undefined) {
+            return { ...prev, [log.id]: log.text };
+          }
+          return prev;
+        });
+      } else if (log.sender === 'AI' || log.sender === 'SYSTEM') {
+        setDisplayedText(prev => {
+          if (prev[log.id] === undefined) {
+            return { ...prev, [log.id]: '' };
+          }
+          return prev;
+        });
+        // Start animation on next tick to ensure state is initialized
+        if (!pendingAnimations.current.has(log.id)) {
+          setTimeout(() => startAnimation(log.id, log.text), 50);
+        }
+      }
+    });
+  }, [logs, startAnimation]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim() || isGenerating) return;
-    
+
     onCommand(inputValue.trim());
     setInputValue("");
+  };
+
+  const handleQuickAction = (action: string) => {
+    if (isGenerating) return;
+    onCommand(action);
   };
 
   const formatTime = (ts: number) => {
@@ -88,14 +119,31 @@ export function Terminal({ logs, onCommand, isGenerating }: TerminalProps) {
   };
 
   return (
-    <div className="flex-1 bg-black/60 border border-cyan-500/20 rounded-lg p-6 flex flex-col shadow-[inset_0_0_40px_rgba(0,0,0,0.8)] overflow-hidden relative">
-      <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-[0.03]" style={{ backgroundImage: "repeating-linear-gradient(0deg, #fff, #fff 1px, transparent 1px, transparent 2px)" }}></div>
-      
+    <div className="flex-1 bg-black/60 border border-cyan-500/20 rounded-lg p-4 md:p-6 flex flex-col shadow-[inset_0_0_40px_rgba(0,0,0,0.8)] overflow-hidden relative">
+      <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-[0.03]"
+           style={{ backgroundImage: "repeating-linear-gradient(0deg, #fff, #fff 1px, transparent 1px, transparent 2px)" }}></div>
+
       <div className="flex-1 font-mono text-sm leading-relaxed overflow-y-auto z-10 flex flex-col gap-4" ref={scrollRef}>
-        <div className="text-cyan-500/40 text-[10px] mb-2 font-bold tracking-widest uppercase">
-          [SYSTEM BOOT SUCCESSFUL // AUTHENTICATED AS CARETAKER]
-        </div>
-        
+        {/* Loading state */}
+        {!logsLoaded && (
+          <div className="flex flex-col items-center justify-center h-full text-[10px] text-cyan-600 uppercase tracking-widest">
+            <div className="animate-pulse mb-2">{LOADING_MESSAGES[loadingMessageIndex]}</div>
+            <div className="flex gap-1">
+              <span className="w-1.5 h-1.5 bg-cyan-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+              <span className="w-1.5 h-1.5 bg-cyan-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+              <span className="w-1.5 h-1.5 bg-cyan-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+            </div>
+          </div>
+        )}
+
+        {/* Boot header */}
+        {logs.length === 0 && logsLoaded && (
+          <div className="text-cyan-500/40 text-[10px] mb-2 font-bold tracking-widest uppercase">
+            [SYSTEM BOOT SUCCESSFUL // AUTHENTICATED AS CARETAKER]
+          </div>
+        )}
+
+        {/* Log entries */}
         {logs.map((log) => (
           <div key={log.id}>
             {log.sender === "USER" ? (
@@ -105,25 +153,42 @@ export function Terminal({ logs, onCommand, isGenerating }: TerminalProps) {
               </div>
             ) : log.sender === "SYSTEM" ? (
               <div className="text-rose-400/90 ml-4 mb-2 whitespace-pre-wrap">
-                [SYSTEM]: {displayedText[log.id] || ""}
+                [SYSTEM]: {displayedText[log.id] ?? ""}
               </div>
             ) : (
               <div className="text-emerald-400/90 ml-4 mb-2 whitespace-pre-wrap">
-                [AEGIS_CORE]: {displayedText[log.id] || ""}
+                [AEGIS_CORE]: {displayedText[log.id] ?? ""}
               </div>
             )}
           </div>
         ))}
 
+        {/* Generating indicator */}
         {isGenerating && (
           <div className="mb-2">
             <span className="text-cyan-400 mr-2">&gt;</span>
-            <span className="text-cyan-500/60 italic">Analyzing current stress vectors...</span>
-            <div className="animate-pulse inline-block w-2 h-4 bg-cyan-500 align-middle ml-1"></div>
+            <span className="text-cyan-500/60 italic">Processing command...</span>
+            <span className="animate-pulse inline-block w-2 h-4 bg-cyan-500 align-middle ml-1"></span>
           </div>
         )}
       </div>
 
+      {/* Suggested actions */}
+      {suggestedActions.length > 0 && !isGenerating && (
+        <div className="mt-3 z-10 flex flex-wrap gap-2">
+          {suggestedActions.map((action, i) => (
+            <button
+              key={i}
+              onClick={() => handleQuickAction(action)}
+              className="text-[9px] border border-cyan-500/30 text-cyan-500/80 hover:text-cyan-300 hover:border-cyan-400/50 px-2 py-1 uppercase tracking-wider transition-colors cursor-pointer"
+            >
+              {action}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Input */}
       <div className="mt-4 pt-4 border-t border-cyan-900/30 flex gap-4 items-center z-10">
         <span className="text-cyan-400 font-bold">$</span>
         <form onSubmit={handleSubmit} className="flex-1 flex">
@@ -131,11 +196,11 @@ export function Terminal({ logs, onCommand, isGenerating }: TerminalProps) {
             autoFocus
             type="text"
             className="bg-transparent border-none outline-none text-white flex-1 placeholder-cyan-900 font-mono text-sm uppercase"
-            placeholder={isGenerating ? "PROCESSING..." : "Enter command for Aegis Core..."}
+            placeholder={isGenerating ? "Aegis Core processing..." : logsLoaded ? "Enter command..." : "Loading..."}
             spellCheck={false}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            disabled={isGenerating}
+            disabled={isGenerating || !logsLoaded}
           />
         </form>
       </div>

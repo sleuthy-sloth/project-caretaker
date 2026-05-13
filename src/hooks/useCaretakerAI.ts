@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
+export interface ShipStatus {
+  power_level: number;
+  hull_integrity: number;
+  stress_level: string;
+}
+
 export interface AIResponse {
   terminal_output: string;
-  ship_status: {
-    power_level: number;
-    hull_integrity: number;
-    stress_level: string;
-  };
+  ship_status: ShipStatus | null;
   active_alarms: string[];
   suggested_actions: string[];
 }
