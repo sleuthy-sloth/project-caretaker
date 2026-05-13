@@ -59,10 +59,20 @@ async function callOpenAICompatible(
     return { ok: false, status: 502, error: `Network error: ${String(err)}` };
   }
 
-  const data = await res.json().catch(() => ({}));
+  const data = await res.json().catch(() => null);
 
   if (!res.ok) {
-    const msg = (data as any)?.error?.message || `API error ${res.status}`;
+    let msg = `API error ${res.status}`;
+    if (data !== null) {
+      const errField = (data as any)?.error;
+      if (typeof errField === "string" && errField) {
+        msg = errField;
+      } else if (errField?.message) {
+        msg = String(errField.message);
+      } else {
+        try { msg = JSON.stringify(data); } catch { /* keep default */ }
+      }
+    }
     return { ok: false, status: res.status, error: msg };
   }
 
@@ -102,10 +112,10 @@ export default async function handler(req: Request): Promise<Response> {
     { role: "user", content: prompt },
   ];
 
-  const env = (process as any).env ?? {};
+  const penv = (process as any).env;
 
   // 1. Try Groq
-  const groqKey: string | undefined = env.GROQ_API_KEY;
+  const groqKey: string | undefined = penv?.GROQ_API_KEY;
   if (groqKey) {
     const result = await callOpenAICompatible(GROQ_API_URL, groqKey, GROQ_MODEL, messages);
     if (result.ok) return json({ content: result.content });
@@ -114,7 +124,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   // 2. Groq rate-limited (or unconfigured) → try OpenRouter free model
-  const openrouterKey: string | undefined = env.OPENROUTER_API_KEY;
+  const openrouterKey: string | undefined = penv?.OPENROUTER_API_KEY;
   if (openrouterKey) {
     const result = await callOpenAICompatible(OPENROUTER_API_URL, openrouterKey, OPENROUTER_MODEL, messages);
     if (result.ok) return json({ content: result.content });
@@ -123,7 +133,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   // 3. OpenRouter rate-limited (or unconfigured) → try Google Gemini
-  const geminiKey: string | undefined = env.GEMINI_API_KEY;
+  const geminiKey: string | undefined = penv?.GEMINI_API_KEY;
   if (geminiKey) {
     const result = await callOpenAICompatible(GEMINI_API_URL, geminiKey, GEMINI_MODEL, messages);
     if (result.ok) return json({ content: result.content });
