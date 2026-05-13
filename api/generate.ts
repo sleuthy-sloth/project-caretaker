@@ -5,6 +5,13 @@ export const config = { runtime: "edge" };
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = "llama-3.3-70b-versatile";
 
+const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+
+// Uses Google's OpenAI-compatible endpoint; update GEMINI_MODEL if a newer lite model is available
+const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+const GEMINI_MODEL = "gemini-2.5-flash-lite";
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -18,6 +25,51 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+type Message = { role: string; content: string };
+
+type APIResult =
+  | { ok: true; content: string }
+  | { ok: false; status: number; error: string };
+
+async function callOpenAICompatible(
+  url: string,
+  apiKey: string,
+  model: string,
+  messages: Message[]
+): Promise<APIResult> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.85,
+        max_tokens: 1024,
+        frequency_penalty: 0.7,
+        presence_penalty: 0.4,
+        response_format: { type: "json_object" },
+      }),
+    });
+  } catch (err) {
+    return { ok: false, status: 502, error: `Network error: ${String(err)}` };
+  }
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    const msg = (data as any)?.error?.message || `API error ${res.status}`;
+    return { ok: false, status: res.status, error: msg };
+  }
+
+  const content: string = (data as any).choices?.[0]?.message?.content ?? "";
+  return { ok: true, content };
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -25,11 +77,6 @@ export default async function handler(req: Request): Promise<Response> {
 
   if (req.method !== "POST") {
     return json({ error: "Method not allowed" }, 405);
-  }
-
-  const apiKey = (process as any).env?.GROQ_API_KEY;
-  if (!apiKey) {
-    return json({ error: "GROQ_API_KEY is not configured on the server." }, 500);
   }
 
   let body: { prompt?: unknown; history?: unknown };
@@ -49,41 +96,42 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ error: "history must be an array" }, 400);
   }
 
-  const messages = [
+  const messages: Message[] = [
     { role: "system", content: SYSTEM_ORACLE_PROMPT },
-    ...history,
+    ...(history as Message[]),
     { role: "user", content: prompt },
   ];
 
-  let groqRes: Response;
-  try {
-    groqRes = await fetch(GROQ_API_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: GROQ_MODEL,
-        messages,
-        temperature: 0.85,
-        max_tokens: 1024,
-        frequency_penalty: 0.7,
-        presence_penalty: 0.4,
-        response_format: { type: "json_object" },
-      }),
-    });
-  } catch (err) {
-    return json({ error: `Failed to reach Groq: ${String(err)}` }, 502);
+  const env = (process as any).env ?? {};
+
+  // 1. Try Groq
+  const groqKey: string | undefined = env.GROQ_API_KEY;
+  if (groqKey) {
+    const result = await callOpenAICompatible(GROQ_API_URL, groqKey, GROQ_MODEL, messages);
+    if (result.ok) return json({ content: result.content });
+    if (result.status !== 429) return json({ error: result.error }, result.status);
+    // 429 → fall through to next provider
   }
 
-  const groqData = await groqRes.json();
-
-  if (!groqRes.ok) {
-    const msg = groqData?.error?.message || `Groq API error ${groqRes.status}`;
-    return json({ error: msg }, groqRes.status);
+  // 2. Groq rate-limited (or unconfigured) → try OpenRouter free model
+  const openrouterKey: string | undefined = env.OPENROUTER_API_KEY;
+  if (openrouterKey) {
+    const result = await callOpenAICompatible(OPENROUTER_API_URL, openrouterKey, OPENROUTER_MODEL, messages);
+    if (result.ok) return json({ content: result.content });
+    if (result.status !== 429) return json({ error: result.error }, result.status);
+    // 429 → fall through to next provider
   }
 
-  const content: string = groqData.choices?.[0]?.message?.content ?? "";
-  return json({ content });
+  // 3. OpenRouter rate-limited (or unconfigured) → try Google Gemini
+  const geminiKey: string | undefined = env.GEMINI_API_KEY;
+  if (geminiKey) {
+    const result = await callOpenAICompatible(GEMINI_API_URL, geminiKey, GEMINI_MODEL, messages);
+    if (result.ok) return json({ content: result.content });
+    return json({ error: result.error }, result.status);
+  }
+
+  return json(
+    { error: "All AI providers are unavailable. Configure GROQ_API_KEY, OPENROUTER_API_KEY, or GEMINI_API_KEY." },
+    503
+  );
 }

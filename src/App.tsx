@@ -334,7 +334,7 @@ export default function App() {
           <div className="hidden sm:flex flex-col">
             <span className="opacity-40 text-xs">{isCloudMode ? "Engine" : "WebGPU"}</span>
             <span className={isCloudMode ? "text-violet-400" : "text-emerald-400"}>
-              {isCloudMode ? "Groq Cloud" : "Active"}
+              {isCloudMode ? "Cloud AI" : "Active"}
             </span>
           </div>
           <div className="hidden md:flex flex-col">

@@ -11,8 +11,8 @@ export interface ModelOption {
 export const AVAILABLE_MODELS: ModelOption[] = [
   {
     id: CLOUD_MODEL_ID,
-    name: "Groq Cloud",
-    description: "Runs on Groq's servers via Llama 3.3 70B. Best narrative. Instant start, no download. Requires internet.",
+    name: "Cloud AI",
+    description: "Runs on remote cloud servers via a large language model. Best narrative. Instant start, no download. Requires internet.",
     recommended: true,
     mobileSafe: true
   },

@@ -110,7 +110,7 @@ export function ShipStatusSidebar({
           <div className="text-[9px] leading-relaxed opacity-60">
             Ship: GSS Theseus<br/>
             Year: 2173<br/>
-            Engine: {isCloudMode ? 'Groq Cloud' : '@mlc-ai/web-llm'}<br/>
+            Engine: {isCloudMode ? 'Cloud AI' : '@mlc-ai/web-llm'}<br/>
             Mode: {isCloudMode ? 'Remote inference' : 'Local / WebGPU'}<br/>
             Status: <span className="text-emerald-400">Ready</span>
           </div>
