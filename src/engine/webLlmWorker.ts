@@ -12,6 +12,36 @@ function isIOS(): boolean {
   return /iPhone|iPad|iPod/i.test((self as unknown as { navigator: Navigator }).navigator?.userAgent ?? "");
 }
 
+// Trim conversation history so the full prompt fits within the model's context
+// window. Keeps the most-recent messages and drops older ones as needed.
+// Heuristic: 4 chars ≈ 1 token; 20 chars of overhead per message for role tags.
+function trimHistory(
+  history: Array<{ role: "user" | "assistant"; content: string }>,
+  userPrompt: string,
+  contextWindow: number,
+): Array<{ role: "user" | "assistant"; content: string }> {
+  const GENERATION_RESERVE = 1024; // must match max_tokens in the generate call
+  const CHARS_PER_TOKEN = 4;
+  const MSG_OVERHEAD = 20;
+
+  let budgetChars =
+    (contextWindow - GENERATION_RESERVE) * CHARS_PER_TOKEN
+    - SYSTEM_ORACLE_PROMPT.length
+    - userPrompt.length
+    - MSG_OVERHEAD;
+
+  if (budgetChars <= 0) return [];
+
+  const out: Array<{ role: "user" | "assistant"; content: string }> = [];
+  for (let i = history.length - 1; i >= 0; i--) {
+    const msgChars = history[i].content.length + MSG_OVERHEAD;
+    if (budgetChars < msgChars) break;
+    budgetChars -= msgChars;
+    out.unshift(history[i]);
+  }
+  return out;
+}
+
 self.onmessage = async (event) => {
   const { type, payload } = event.data;
 
@@ -59,9 +89,12 @@ self.onmessage = async (event) => {
     }
   } else if (type === "GENERATE") {
     try {
-      const history: Array<{ role: "user" | "assistant"; content: string }> = Array.isArray(payload.history)
-        ? payload.history
-        : [];
+      const rawHistory: Array<{ role: "user" | "assistant"; content: string }> =
+        Array.isArray(payload.history) ? payload.history : [];
+
+      // Qwen 2.5 0.5B has a 4 096-token window; use it as a safe conservative
+      // limit for all local models since the system prompt is ~2 500–3 000 tokens.
+      const history = trimHistory(rawHistory, payload.prompt, 4096);
 
       const messages = [
         { role: "system", content: SYSTEM_ORACLE_PROMPT },
