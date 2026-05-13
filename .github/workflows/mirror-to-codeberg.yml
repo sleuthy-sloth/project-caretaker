@@ -16,6 +16,15 @@ jobs:
       - name: Push to Codeberg
         env:
           CODEBERG_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
+          CODEBERG_REPO: ${{ vars.CODEBERG_REPO }}
         run: |
-          git remote add codeberg https://oauth2:${CODEBERG_TOKEN}@codeberg.org/${{ vars.CODEBERG_REPO }}.git
-          git push codeberg HEAD:${{ github.ref_name }} --force-with-lease
+          if [ -z "$CODEBERG_TOKEN" ]; then
+            echo "CODEBERG_TOKEN secret is not set"
+            exit 1
+          fi
+          if [ -z "$CODEBERG_REPO" ]; then
+            echo "CODEBERG_REPO variable is not set (expected format: owner/repo)"
+            exit 1
+          fi
+          git remote add codeberg "https://oauth2:${CODEBERG_TOKEN}@codeberg.org/${CODEBERG_REPO}.git"
+          git push codeberg "HEAD:${GITHUB_REF_NAME}" --force
