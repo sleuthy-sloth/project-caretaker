@@ -218,7 +218,8 @@ export function Terminal({ logs, logsLoaded, onCommand, isGenerating, suggestedA
           <input
             autoFocus
             type="text"
-            className="bg-transparent border-none outline-none text-white flex-1 placeholder-cyan-900 font-mono text-sm uppercase"
+            className="bg-transparent border-none outline-none text-white flex-1 placeholder-cyan-900 font-mono uppercase"
+            style={{ fontSize: '16px' }}
             placeholder={isGenerating ? "Aegis Core processing..." : logsLoaded ? "Enter command..." : "Loading..."}
             spellCheck={false}
             value={inputValue}
