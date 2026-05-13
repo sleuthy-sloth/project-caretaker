@@ -81,7 +81,11 @@ self.onmessage = async (event) => {
         ? { ...prebuiltAppConfig, useIndexedDBCache: false }
         : prebuiltAppConfig;
 
-      await engine.reload(payload.modelId, undefined, appConfig);
+      const chatOpts = {
+        context_window_size: 6144
+      };
+
+      await engine.reload(payload.modelId, chatOpts, appConfig);
       clearInterval(stallTimer);
       self.postMessage({ type: "INIT_COMPLETE" });
     } catch (error) {
@@ -92,9 +96,9 @@ self.onmessage = async (event) => {
       const rawHistory: Array<{ role: "user" | "assistant"; content: string }> =
         Array.isArray(payload.history) ? payload.history : [];
 
-      // Qwen 2.5 0.5B has a 4 096-token window; use it as a safe conservative
-      // limit for all local models since the system prompt is ~2 500–3 000 tokens.
-      const history = trimHistory(rawHistory, payload.prompt, 4096);
+      // Qwen 2.5 0.5B normally defaults to 4096, but we overridden it to 6144
+      // since the system prompt is ~4000 tokens.
+      const history = trimHistory(rawHistory, payload.prompt, 6144);
 
       const messages = [
         { role: "system", content: SYSTEM_ORACLE_PROMPT },

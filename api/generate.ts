@@ -133,8 +133,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (groqKey) {
     const result = await callOpenAICompatible(GROQ_API_URL, groqKey, GROQ_MODEL, messages, penaltyParams);
     if (result.ok) return json({ content: result.content });
-    if (!isRetryable(result.status)) return json({ error: result.error }, result.status);
-    // 429/503 → fall through to next provider
+    console.warn(`Groq failed (${result.status}): ${result.error}. Falling back...`);
   }
 
   // 2. Groq rate-limited/unavailable (or unconfigured) → try Gemini models in order
@@ -144,10 +143,8 @@ export default async function handler(req: Request): Promise<Response> {
     for (const model of GEMINI_MODELS) {
       const result = await callOpenAICompatible(GEMINI_API_URL, geminiKey, model, messages);
       if (result.ok) return json({ content: result.content });
-      // 404 = wrong model ID, 429/503 = capacity — all skip to next model
-      if (result.status !== 404 && !isRetryable(result.status)) return json({ error: result.error }, result.status);
+      console.warn(`Gemini model ${model} failed (${result.status}): ${result.error}. Trying next...`);
     }
-    // all Gemini models unavailable → fall through to OpenRouter
   }
 
   // 3. Gemini rate-limited (or unconfigured) → try OpenRouter (auto-routes to live free models)
@@ -155,6 +152,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (openrouterKey) {
     const result = await callOpenAICompatible(OPENROUTER_API_URL, openrouterKey, OPENROUTER_MODEL, messages, penaltyParams);
     if (result.ok) return json({ content: result.content });
+    console.warn(`OpenRouter failed (${result.status}): ${result.error}. No more providers.`);
     return json({ error: result.error }, result.status);
   }
 
