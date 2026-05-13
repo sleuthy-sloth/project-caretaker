@@ -1,0 +1,19 @@
+{
+  "name": "Project Caretaker",
+  "short_name": "Caretaker",
+  "description": "Emergency AI survival narrative aboard the GSS Theseus",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050507",
+  "theme_color": "#050507",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["games", "entertainment"]
+}
