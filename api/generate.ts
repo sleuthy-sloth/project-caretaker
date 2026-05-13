@@ -14,7 +14,7 @@ const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/
 // 3.1 Flash Lite has the highest RPM (15), so it goes first.
 const GEMINI_MODELS = [
   "gemini-3.1-flash-lite",
-  "gemini-3.0-flash",
+  "gemini-3-flash",
   "gemini-2.5-flash",
 ];
 
@@ -144,8 +144,8 @@ export default async function handler(req: Request): Promise<Response> {
     for (const model of GEMINI_MODELS) {
       const result = await callOpenAICompatible(GEMINI_API_URL, geminiKey, model, messages);
       if (result.ok) return json({ content: result.content });
-      if (!isRetryable(result.status)) return json({ error: result.error }, result.status);
-      // 429/503 → try next Gemini model
+      // 404 = wrong model ID, 429/503 = capacity — all skip to next model
+      if (result.status !== 404 && !isRetryable(result.status)) return json({ error: result.error }, result.status);
     }
     // all Gemini models unavailable → fall through to OpenRouter
   }
