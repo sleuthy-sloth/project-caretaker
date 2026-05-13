@@ -35,7 +35,8 @@ async function callOpenAICompatible(
   url: string,
   apiKey: string,
   model: string,
-  messages: Message[]
+  messages: Message[],
+  extraParams: Record<string, unknown> = {}
 ): Promise<APIResult> {
   let res: Response;
   try {
@@ -50,9 +51,8 @@ async function callOpenAICompatible(
         messages,
         temperature: 0.85,
         max_tokens: 1024,
-        frequency_penalty: 0.7,
-        presence_penalty: 0.4,
         response_format: { type: "json_object" },
+        ...extraParams,
       }),
     });
   } catch (err) {
@@ -114,10 +114,14 @@ export default async function handler(req: Request): Promise<Response> {
 
   const penv = (process as any).env;
 
+  // frequency_penalty / presence_penalty are supported by Groq and OpenRouter
+  // but are rejected by Gemini's OpenAI-compatible endpoint.
+  const penaltyParams = { frequency_penalty: 0.7, presence_penalty: 0.4 };
+
   // 1. Try Groq
   const groqKey: string | undefined = penv?.GROQ_API_KEY;
   if (groqKey) {
-    const result = await callOpenAICompatible(GROQ_API_URL, groqKey, GROQ_MODEL, messages);
+    const result = await callOpenAICompatible(GROQ_API_URL, groqKey, GROQ_MODEL, messages, penaltyParams);
     if (result.ok) return json({ content: result.content });
     if (result.status !== 429) return json({ error: result.error }, result.status);
     // 429 → fall through to next provider
@@ -126,7 +130,7 @@ export default async function handler(req: Request): Promise<Response> {
   // 2. Groq rate-limited (or unconfigured) → try OpenRouter free model
   const openrouterKey: string | undefined = penv?.OPENROUTER_API_KEY;
   if (openrouterKey) {
-    const result = await callOpenAICompatible(OPENROUTER_API_URL, openrouterKey, OPENROUTER_MODEL, messages);
+    const result = await callOpenAICompatible(OPENROUTER_API_URL, openrouterKey, OPENROUTER_MODEL, messages, penaltyParams);
     if (result.ok) return json({ content: result.content });
     if (result.status !== 429) return json({ error: result.error }, result.status);
     // 429 → fall through to next provider
@@ -135,6 +139,7 @@ export default async function handler(req: Request): Promise<Response> {
   // 3. OpenRouter rate-limited (or unconfigured) → try Google Gemini
   const geminiKey: string | undefined = penv?.GEMINI_API_KEY;
   if (geminiKey) {
+    // Gemini does not accept frequency_penalty / presence_penalty — omit them
     const result = await callOpenAICompatible(GEMINI_API_URL, geminiKey, GEMINI_MODEL, messages);
     if (result.ok) return json({ content: result.content });
     return json({ error: result.error }, result.status);
