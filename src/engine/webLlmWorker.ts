@@ -2,6 +2,8 @@ import { MLCEngine, InitProgressCallback, prebuiltAppConfig } from "@mlc-ai/web-
 import { SYSTEM_ORACLE_PROMPT } from "./systemPrompt";
 import { parseAIResponse } from "./responseParser";
 
+const GENERATION_TIMEOUT = 30_000;
+
 let engine: MLCEngine;
 let activeModelId = "";
 
@@ -107,6 +109,11 @@ self.onmessage = async (event) => {
       self.postMessage({ type: "ERROR", payload: String(error) });
     }
   } else if (type === "GENERATE") {
+    const startTime = Date.now();
+    const heartbeatInterval = setInterval(() => {
+      self.postMessage({ type: "HEARTBEAT", payload: { elapsedMs: Date.now() - startTime } });
+    }, 3000);
+
     try {
       const rawHistory: Array<{ role: "user" | "assistant"; content: string }> =
         Array.isArray(payload.history) ? payload.history : [];
@@ -120,7 +127,7 @@ self.onmessage = async (event) => {
         { role: "user", content: payload.prompt },
       ];
 
-      const reply = await engine.chat.completions.create({
+      const generationPromise = engine.chat.completions.create({
         messages: messages as any,
         temperature: 0.85,
         max_tokens: 1024,
@@ -128,6 +135,21 @@ self.onmessage = async (event) => {
         presence_penalty: 0.4,
         response_format: { type: "json_object" },
       });
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                "Generation timed out after 30 seconds. The local model may have crashed. Try switching to Cloud AI."
+              )
+            ),
+          GENERATION_TIMEOUT
+        )
+      );
+
+      const reply = await Promise.race([generationPromise, timeoutPromise]);
+      clearInterval(heartbeatInterval);
 
       const responseText = reply.choices[0].message.content || "";
       const parsedResponse = parseAIResponse(responseText);
@@ -140,6 +162,7 @@ self.onmessage = async (event) => {
         },
       });
     } catch (error) {
+      clearInterval(heartbeatInterval);
       self.postMessage({ type: "ERROR", payload: String(error) });
     }
   }

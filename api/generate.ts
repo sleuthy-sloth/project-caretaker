@@ -48,56 +48,95 @@ async function callOpenAICompatible(
   messages: Message[],
   extraParams: Record<string, unknown> = {}
 ): Promise<APIResult> {
-  let res: Response;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout per provider
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: 0.85,
-        max_tokens: 1024,
-        response_format: { type: "json_object" },
-        ...extraParams,
-      }),
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-  } catch (err) {
-    clearTimeout(timeoutId);
-    return { ok: false, status: 502, error: `Network/Timeout error: ${String(err)}` };
-  }
+  const maxRetries = 1;
 
-  const data = await res.json().catch(() => null);
-
-  if (!res.ok) {
-    let msg = `API error ${res.status}`;
-    if (data !== null) {
-      const errField = (data as any)?.error;
-      if (typeof errField === "string" && errField) {
-        msg = errField;
-      } else if (errField?.message) {
-        msg = String(errField.message);
-      } else {
-        try { msg = JSON.stringify(data); } catch { /* keep default */ }
-      }
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    let res: Response;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout per attempt
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.85,
+          max_tokens: 1024,
+          response_format: { type: "json_object" },
+          ...extraParams,
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+    } catch (err) {
+      clearTimeout(timeoutId);
+      // Network error - not retryable, return immediately
+      return { ok: false, status: 502, error: `Network/Timeout error: ${String(err)}` };
     }
-    return { ok: false, status: res.status, error: msg };
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      // Non-retryable 4xx errors - return immediately
+      if (res.status >= 400 && res.status < 500 && !isRetryable(res.status)) {
+        let msg = `API error ${res.status}`;
+        if (data !== null) {
+          const errField = (data as any)?.error;
+          if (typeof errField === "string" && errField) {
+            msg = errField;
+          } else if (errField?.message) {
+            msg = String(errField.message);
+          } else {
+            try { msg = JSON.stringify(data); } catch { /* keep default */ }
+          }
+        }
+        return { ok: false, status: res.status, error: msg };
+      }
+
+      // Retryable error (429, 502, 503, 504) - retry if we haven't exceeded maxRetries
+      if (attempt < maxRetries && isRetryable(res.status)) {
+        await delay(500);
+        continue;
+      }
+
+      // Either not retryable or exhausted retries - return error
+      let msg = `API error ${res.status}`;
+      if (data !== null) {
+        const errField = (data as any)?.error;
+        if (typeof errField === "string" && errField) {
+          msg = errField;
+        } else if (errField?.message) {
+          msg = String(errField.message);
+        } else {
+          try { msg = JSON.stringify(data); } catch { /* keep default */ }
+        }
+      }
+      return { ok: false, status: res.status, error: msg };
+    }
+
+    // Success
+    const content: string = (data as any).choices?.[0]?.message?.content ?? "";
+    return { ok: true, content };
   }
 
-  const content: string = (data as any).choices?.[0]?.message?.content ?? "";
-  return { ok: true, content };
+  // Should not reach here, but return a fallback error
+  return { ok: false, status: 500, error: "Unexpected error in retry loop" };
 }
 
 function isRetryable(status: number): boolean {
-  return status === 429 || status === 503;
+  return status === 429 || status === 502 || status === 503 || status === 504;
 }
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Export for unit tests only — Vercel runtime only calls the default handler
+export { isRetryable, delay, callOpenAICompatible };
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") {
@@ -175,12 +214,25 @@ export default async function handler(req: Request): Promise<Response> {
     if (result.ok) return json({ content: result.content });
     if (isErrorResult(result)) {
       console.warn(`Groq failed (${result.status}): ${result.error}. No more providers.`);
-      return json({ error: result.error }, result.status);
+      return json(
+        {
+          error: result.error,
+          provider: "groq",
+          retryable: isRetryable(result.status),
+          suggestion: "Try again or switch to Cloud AI (Auto) for automatic fallback."
+        },
+        result.status
+      );
     }
   }
 
   return json(
-    { error: "All AI providers are unavailable. Configure GEMINI_API_KEY, OPENROUTER_API_KEY, or GROQ_API_KEY." },
+    {
+      error: "All AI providers are unavailable. Configure GEMINI_API_KEY, OPENROUTER_API_KEY, or GROQ_API_KEY.",
+      provider: null,
+      retryable: false,
+      suggestion: "Configure at least one API key (GEMINI_API_KEY, OPENROUTER_API_KEY, or GROQ_API_KEY) in your deployment."
+    },
     503
   );
 }

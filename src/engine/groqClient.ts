@@ -14,7 +14,15 @@ export async function sendGroqMessage(
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.error || `Groq request failed: ${response.status}`);
+    const errorMessage = body.error || `Groq request failed: ${response.status}`;
+    if (body.provider !== undefined || body.suggestion) {
+      const parts = [errorMessage];
+      if (body.suggestion) {
+        parts.push(body.suggestion);
+      }
+      throw new Error(parts.join(" "));
+    }
+    throw new Error(errorMessage);
   }
 
   const { content } = await response.json();

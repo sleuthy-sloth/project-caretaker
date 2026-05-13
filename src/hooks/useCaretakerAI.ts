@@ -35,6 +35,7 @@ export function useCaretakerAI() {
   const [error, setError] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [isCloudMode, setIsCloudMode] = useState(false);
+  const [generationElapsed, setGenerationElapsed] = useState(0);
 
   const resolveRef = useRef<((val: AIResponse) => void) | null>(null);
   const rejectRef = useRef<((err: string) => void) | null>(null);
@@ -68,6 +69,9 @@ export function useCaretakerAI() {
       const { type, payload } = event.data;
 
       switch (type) {
+        case "HEARTBEAT":
+          setGenerationElapsed(payload.elapsedMs);
+          break;
         case "PROGRESS":
           setDownloadProgress(payload.progress);
           setProgressText(payload.text);
@@ -81,6 +85,7 @@ export function useCaretakerAI() {
         case "GENERATE_COMPLETE":
           clearGenerationTimeout();
           setIsGenerating(false);
+          setGenerationElapsed(0);
           if (resolveRef.current) {
             resolveRef.current(payload.parsed);
             resolveRef.current = null;
@@ -91,6 +96,7 @@ export function useCaretakerAI() {
           clearGenerationTimeout();
           setIsInitializing(false);
           setIsGenerating(false);
+          setGenerationElapsed(0);
           setError(payload);
           if (rejectRef.current) {
             rejectRef.current(payload);
@@ -133,15 +139,18 @@ export function useCaretakerAI() {
 
   const sendMessage = useCallback((prompt: string, history: ChatHistoryMessage[] = []): Promise<AIResponse> => {
     if (isCloudRef.current) {
+      setGenerationElapsed(0);
       setIsGenerating(true);
       setError(null);
       return sendGroqMessage(prompt, history, activeCloudModelRef.current)
         .then(response => {
           setIsGenerating(false);
+          setGenerationElapsed(0);
           return response;
         })
         .catch(err => {
           setIsGenerating(false);
+          setGenerationElapsed(0);
           const msg = err instanceof Error ? err.message : String(err);
           setError(msg);
           throw new Error(msg);
@@ -156,6 +165,7 @@ export function useCaretakerAI() {
 
       resolveRef.current = resolve;
       rejectRef.current = reject;
+      setGenerationElapsed(0);
       setIsGenerating(true);
       setError(null);
 
@@ -182,6 +192,7 @@ export function useCaretakerAI() {
     isCloudMode,
     error,
     initAI,
-    sendMessage
+    sendMessage,
+    generationElapsed
   };
 }

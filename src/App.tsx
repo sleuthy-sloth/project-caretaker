@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Terminal, LogEntry } from './components/Terminal';
 import { useCaretakerAI, AIResponse, ChatHistoryMessage } from './hooks/useCaretakerAI';
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
@@ -47,8 +47,9 @@ export default function App() {
 
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const initializationTriggered = useRef(false);
+  const lastCommandRef = useRef<string>("");
 
-  const { isInitializing, downloadProgress, progressText, isGenerating, isReady, isCloudMode, error, initAI, sendMessage } = useCaretakerAI();
+  const { isInitializing, downloadProgress, progressText, isGenerating, isReady, isCloudMode, error, initAI, sendMessage, generationElapsed } = useCaretakerAI();
 
   // Auth Effect
   useEffect(() => {
@@ -190,6 +191,7 @@ export default function App() {
     // 1. Echo user command (fire & forget — don't block UI)
     if (!isHidden) {
       pushTerminalLog(command, "USER");
+      lastCommandRef.current = command; // Track for retry
     }
 
     // 2. Generate AI response (this legitimately blocks — AI is the bottleneck)
@@ -230,6 +232,17 @@ export default function App() {
       pushTerminalLog("ERROR: AEGIS CORE UNRESPONSIVE.", "SYSTEM");
     }
   };
+
+  const handleRetry = useCallback(() => {
+    if (lastCommandRef.current) {
+      handleCommand(lastCommandRef.current);
+    }
+  }, [handleCommand]);
+
+  const handleSwitchToAuto = useCallback(() => {
+    setSelectedModel("cloud-auto");
+    initAI("cloud-auto");
+  }, [initAI]);
 
   // Auto-send system init once ready
   useEffect(() => {
@@ -411,11 +424,32 @@ export default function App() {
             onCommand={handleCommand}
             isGenerating={isGenerating || isInitializing}
             suggestedActions={suggestedActions}
+            generationElapsed={generationElapsed}
           />
           {error && (
-            <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-rose-500/20 border border-rose-500 text-rose-200 px-4 py-2 rounded text-xs z-50 shadow-lg flex items-center gap-2">
-              <AlertTriangle className="w-3 h-3 shrink-0" />
-              <span>SYS ERR: {error}</span>
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-rose-500/20 border border-rose-500 text-rose-200 px-4 py-2 rounded text-xs z-50 shadow-lg flex flex-col gap-2 max-w-md">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-3 h-3 shrink-0" />
+                <span>{error}</span>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={handleRetry}
+                  disabled={isGenerating}
+                  className="border border-rose-400/50 hover:bg-rose-500/20 px-2 py-0.5 rounded transition-colors text-rose-300 disabled:opacity-30 cursor-pointer"
+                >
+                  Retry
+                </button>
+                {!error.toLowerCase().includes("configure") && (
+                  <button
+                    onClick={handleSwitchToAuto}
+                    disabled={isGenerating}
+                    className="border border-violet-400/50 hover:bg-violet-500/20 px-2 py-0.5 rounded transition-colors text-violet-300 disabled:opacity-30 cursor-pointer"
+                  >
+                    Switch to Auto
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </main>

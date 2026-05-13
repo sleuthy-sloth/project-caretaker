@@ -13,6 +13,7 @@ interface TerminalProps {
   onCommand: (command: string) => void;
   isGenerating: boolean;
   suggestedActions?: string[];
+  generationElapsed?: number;
 }
 
 const LOADING_MESSAGES = [
@@ -22,7 +23,7 @@ const LOADING_MESSAGES = [
   "Calibrating display matrix..."
 ];
 
-export function Terminal({ logs, logsLoaded, onCommand, isGenerating, suggestedActions = [] }: TerminalProps) {
+export function Terminal({ logs, logsLoaded, onCommand, isGenerating, suggestedActions = [], generationElapsed = 0 }: TerminalProps) {
   const [inputValue, setInputValue] = useState("");
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -224,7 +225,7 @@ export function Terminal({ logs, logsLoaded, onCommand, isGenerating, suggestedA
             type="text"
             className="bg-transparent border-none outline-none text-white flex-1 placeholder-cyan-900 font-mono uppercase"
             style={{ fontSize: '16px' }}
-            placeholder={isGenerating ? "Aegis Core processing..." : logsLoaded ? "Enter command..." : "Loading..."}
+            placeholder={isGenerating ? (generationElapsed > 0 ? `Aegis Core processing... (${Math.round(generationElapsed / 1000)}s)` : "Aegis Core processing...") : logsLoaded ? "Enter command..." : "Loading..."}
             spellCheck={false}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}

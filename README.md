@@ -26,6 +26,14 @@ LLM that voices Aegis Core — can run in one of two modes:
 Both modes use the same persona, the same JSON contract, and the same story
 checkpoints, so gameplay is consistent regardless of which engine you pick.
 
+Generation is guarded against hangs in both modes. The local engine enforces a
+**30-second watchdog timeout** while the worker emits **heartbeat pings every
+3 seconds** so the terminal can display a live elapsed-time counter. The cloud
+engine **retries once** on transient HTTP errors (429, 502, 503, 504) with a
+500 ms delay and surfaces **structured error responses** that include a
+`retryable` flag and a user-facing `suggestion`, enabling the UI to offer
+Retry and Switch-to-Auto options when generation fails.
+
 ## Key Features
 
 - **Dual Oracle Engines.** Run the AI locally on WebGPU for an offline,
@@ -40,6 +48,12 @@ checkpoints, so gameplay is consistent regardless of which engine you pick.
   the full story without holding the whole arc in context.
 - **Persistent sessions.** Your terminal history and ship telemetry sync to
   Firebase Firestore. Resume any session from any device.
+- **Resilient Oracle Engine.** Local mode has a 30-second generation watchdog
+  that prevents the model from hanging indefinitely; a heartbeat ping every 3s
+  keeps the UI informed of progress. Cloud mode automatically retries once on
+  transient failures (429, 502, 503, 504) with a 500 ms backoff, and returns
+  structured error responses (`{error, provider, retryable, suggestion}`) that
+  power Retry and Switch-to-Auto buttons in the error banner.
 - **Custom CRT UI.** Tailwind v4 styling with scanlines, phosphor glow, and
   a responsive multi-pane terminal layout. Works on desktop and most modern
   phones (mobile is gated to small local models for memory safety).
@@ -93,6 +107,14 @@ checkpoints, so gameplay is consistent regardless of which engine you pick.
 2. **Oracle Engine** runs locally in a Web Worker (WebGPU) or remotely via
    an Edge Function. Either way, the system prompt comes from
    `src/engine/systemPrompt.ts` and the active checkpoint from `STORY.md`.
+   - **Local mode** enforces a 30-second generation watchdog
+     (`Promise.race` timeout in `webLlmWorker.ts`). The worker sends a
+     heartbeat ping every 3 seconds; the hook (`useCaretakerAI.ts`) tracks
+     elapsed time for the terminal's live counter.
+   - **Cloud mode** retries once on transient failures (429, 502, 503, 504)
+     with a 500 ms backoff (`api/generate.ts`). Errors carry a structured
+     payload (`provider`, `retryable`, `suggestion`) that powers Retry and
+     Switch-to-Auto buttons in the error banner.
 3. **Structured generation.** The system prompt requires a strict JSON
    payload (`terminal_output`, `ship_status`, `active_alarms`,
    `suggested_actions`).
@@ -153,6 +175,12 @@ To wire one up:
 3. Set the matching API-key environment variable in your deployment
    (Vercel → Project → Settings → Environment Variables, or a local
    `.env.local` for development).
+
+The edge function retries once on transient failures (429, 502, 503, 504)
+with a 500 ms delay. On exhaustion it returns a structured error
+(`{error, provider, retryable, suggestion}`) that the front-end uses to
+show Retry and Switch-to-Auto buttons. If all configured providers fail,
+the response includes a clear configuration hint.
 
 If you prefer to run **local-only**, you can delete `api/generate.ts` and
 remove the cloud option from `AVAILABLE_MODELS` in `src/App.tsx`. The
