@@ -37,6 +37,10 @@ type APIResult =
   | { ok: true; content: string }
   | { ok: false; status: number; error: string };
 
+function isErrorResult(result: APIResult): result is Extract<APIResult, { ok: false }> {
+  return result.ok === false;
+}
+
 async function callOpenAICompatible(
   url: string,
   apiKey: string,
@@ -133,26 +137,20 @@ export default async function handler(req: Request): Promise<Response> {
   // but are rejected by Gemini's OpenAI-compatible endpoint.
   const penaltyParams = { frequency_penalty: 0.7, presence_penalty: 0.4 };
 
-  // 1. Try Groq
-  const groqKey: string | undefined = penv?.GROQ_API_KEY;
-  if (groqKey) {
-    const result = await callOpenAICompatible(GROQ_API_URL, groqKey, GROQ_MODEL, messages, penaltyParams);
-    if (result.ok) return json({ content: result.content });
-    console.warn(`Groq failed (${result.status}): ${result.error}. Falling back...`);
-  }
-
-  // 2. Groq rate-limited/unavailable (or unconfigured) → try Gemini models in order
+  // 1. Try Gemini models in order
   const geminiKey: string | undefined = penv?.GEMINI_API_KEY;
   if (geminiKey) {
     // Gemini does not accept frequency_penalty / presence_penalty — omit them
     for (const model of GEMINI_MODELS) {
       const result = await callOpenAICompatible(GEMINI_API_URL, geminiKey, model, messages);
       if (result.ok) return json({ content: result.content });
-      console.warn(`Gemini model ${model} failed (${result.status}): ${result.error}. Trying next...`);
+      if (isErrorResult(result)) {
+        console.warn(`Gemini model ${model} failed (${result.status}): ${result.error}. Trying next...`);
+      }
     }
   }
 
-  // 3. Gemini rate-limited (or unconfigured) → try OpenRouter (auto-routes to live free models)
+  // 2. Gemini unavailable (or unconfigured) → try OpenRouter
   const openrouterKey: string | undefined = penv?.OPENROUTER_API_KEY;
   if (openrouterKey) {
     // OpenRouter's free model pool often includes models that reject response_format.
@@ -160,12 +158,24 @@ export default async function handler(req: Request): Promise<Response> {
     const openRouterParams = { ...penaltyParams, response_format: undefined };
     const result = await callOpenAICompatible(OPENROUTER_API_URL, openrouterKey, OPENROUTER_MODEL, messages, openRouterParams);
     if (result.ok) return json({ content: result.content });
-    console.warn(`OpenRouter failed (${result.status}): ${result.error}. No more providers.`);
-    return json({ error: result.error }, result.status);
+    if (isErrorResult(result)) {
+      console.warn(`OpenRouter failed (${result.status}): ${result.error}. Falling back...`);
+    }
+  }
+
+  // 3. OpenRouter unavailable (or unconfigured) → try Groq as final fallback
+  const groqKey: string | undefined = penv?.GROQ_API_KEY;
+  if (groqKey) {
+    const result = await callOpenAICompatible(GROQ_API_URL, groqKey, GROQ_MODEL, messages, penaltyParams);
+    if (result.ok) return json({ content: result.content });
+    if (isErrorResult(result)) {
+      console.warn(`Groq failed (${result.status}): ${result.error}. No more providers.`);
+      return json({ error: result.error }, result.status);
+    }
   }
 
   return json(
-    { error: "All AI providers are unavailable. Configure GROQ_API_KEY, OPENROUTER_API_KEY, or GEMINI_API_KEY." },
+    { error: "All AI providers are unavailable. Configure GEMINI_API_KEY, OPENROUTER_API_KEY, or GROQ_API_KEY." },
     503
   );
 }
