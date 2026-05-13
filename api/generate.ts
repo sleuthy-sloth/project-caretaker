@@ -6,7 +6,12 @@ const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = "llama-3.3-70b-versatile";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+// Tried in order; next is attempted only if the current returns 429
+const OPENROUTER_FREE_MODELS = [
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "google/gemma-3-27b-it:free",
+  "mistralai/mistral-7b-instruct:free",
+];
 
 // Uses Google's OpenAI-compatible endpoint; update GEMINI_MODEL if a newer lite model is available
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
@@ -127,13 +132,16 @@ export default async function handler(req: Request): Promise<Response> {
     // 429 → fall through to next provider
   }
 
-  // 2. Groq rate-limited (or unconfigured) → try OpenRouter free model
+  // 2. Groq rate-limited (or unconfigured) → try OpenRouter free models in sequence
   const openrouterKey: string | undefined = penv?.OPENROUTER_API_KEY;
   if (openrouterKey) {
-    const result = await callOpenAICompatible(OPENROUTER_API_URL, openrouterKey, OPENROUTER_MODEL, messages, penaltyParams);
-    if (result.ok) return json({ content: result.content });
-    if (result.status !== 429) return json({ error: result.error }, result.status);
-    // 429 → fall through to next provider
+    for (const model of OPENROUTER_FREE_MODELS) {
+      const result = await callOpenAICompatible(OPENROUTER_API_URL, openrouterKey, model, messages, penaltyParams);
+      if (result.ok) return json({ content: result.content });
+      if (result.status !== 429) return json({ error: result.error }, result.status);
+      // 429 → try next free model
+    }
+    // all free models rate-limited → fall through to Gemini
   }
 
   // 3. OpenRouter rate-limited (or unconfigured) → try Google Gemini
