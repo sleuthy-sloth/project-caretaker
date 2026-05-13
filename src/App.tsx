@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Terminal, LogEntry } from './components/Terminal';
 import { useCaretakerAI, AIResponse } from './hooks/useCaretakerAI';
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
-import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Skull, AlertTriangle, RotateCcw, Ship } from 'lucide-react';
 
@@ -63,6 +63,8 @@ export default function App() {
   const [activeAlarms, setActiveAlarms] = useState<ActiveAlarm[]>([]);
   const [suggestedActions, setSuggestedActions] = useState<string[]>([]);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
 
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const initializationTriggered = useRef(false);
@@ -79,13 +81,50 @@ export default function App() {
   }, []);
 
   const handleLogin = async () => {
+    setAuthError(null);
+    setAuthLoading(true);
+    const provider = new GoogleAuthProvider();
     try {
-      const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      const code = e?.code || '';
+      if (code === 'auth/popup-blocked' || code === 'auth/popup-closed-by-user') {
+        // Popup failed — fall back to redirect which works with all popup blockers
+        setAuthError('Popup was blocked. Redirecting to Google sign-in...');
+        try {
+          await signInWithRedirect(auth, provider);
+        } catch (redirectErr) {
+          console.error('Redirect auth also failed:', redirectErr);
+          setAuthError('Sign-in failed. Check console for details and try again.');
+        }
+      } else if (code === 'auth/unauthorized-domain') {
+        setAuthError(
+          'This domain is not authorized for Firebase sign-in. ' +
+          'Go to Firebase Console → Authentication → Settings → ' +
+          'Authorized domains and add this domain.'
+        );
+      } else if (code === 'auth/cancelled-popup-request') {
+        setAuthError('Only one sign-in popup at a time.');
+      } else {
+        console.error('Login error:', e);
+        setAuthError(e?.message || 'Authentication failed. Please try again.');
+      }
+    } finally {
+      setAuthLoading(false);
     }
   };
+
+  // Handle redirect-based sign-in (popup blocker fallback)
+  useEffect(() => {
+    getRedirectResult(auth).then((result) => {
+      if (result) {
+        // Successfully signed in via redirect
+        setAuthError(null);
+      }
+    }).catch((err) => {
+      console.error('Redirect sign-in error:', err);
+    });
+  }, []);
 
   const handleModelSelect = (modelId: string) => {
     setSelectedModel(modelId);
@@ -252,12 +291,20 @@ export default function App() {
             [ SYSTEM LOCKED ]
          </div>
          <h1 className="text-3xl text-cyan-400 mb-8 tracking-widest uppercase z-10 font-bold drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]">AEGIS CORE</h1>
+         {authError && (
+           <div className="z-10 mb-6 max-w-md text-center">
+             <div className="border border-rose-500/40 bg-rose-950/20 px-4 py-3 text-[11px] text-rose-300/90 leading-relaxed">
+               <span className="text-rose-400 font-bold">AUTH ERROR:</span> {authError}
+             </div>
+           </div>
+         )}
          <p className="text-xs opacity-40 mb-6 z-10 tracking-wider uppercase">GSS Theseus • Mission Year 147</p>
          <button
            onClick={handleLogin}
-           className="z-10 border border-cyan-500/50 text-cyan-400 px-6 py-2 uppercase tracking-widest hover:bg-cyan-900/30 transition-colors cursor-pointer"
+           disabled={authLoading}
+           className="z-10 border border-cyan-500/50 text-cyan-400 px-6 py-2 uppercase tracking-widest hover:bg-cyan-900/30 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
          >
-            Initialize Session
+           {authLoading ? 'Initializing...' : 'Initialize Session'}
          </button>
       </div>
     );
