@@ -4,12 +4,13 @@ import { useCaretakerAI, AIResponse, ChatHistoryMessage, CLOUD_MODEL_ID } from '
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
-import { Skull, AlertTriangle, RotateCcw, Ship, LogOut, PanelLeft, X } from 'lucide-react';
+import { Skull, AlertTriangle, RotateCcw, Ship, LogOut, PanelLeft, X, Map as MapIcon } from 'lucide-react';
 
 import { SystemLockScreen } from './components/SystemLockScreen';
 import { ModelSelector } from './components/ModelSelector';
 import { ShipStatusSidebar } from './components/ShipStatusSidebar';
 import { ResetConfirmModal } from './components/ResetConfirmModal';
+import { ShipMap } from './components/ShipMap';
 import { ShipState, ActiveAlarm, normalizeStress } from './lib/types';
 import { AVAILABLE_MODELS } from './lib/models';
 
@@ -24,8 +25,8 @@ function buildChatHistory(logs: LogEntry[]): ChatHistoryMessage[] {
   }));
 }
 
-function parseSender(s: string): "USER" | "AI" | "SYSTEM" {
-  if (s === "USER" || s === "AI" || s === "SYSTEM") return s;
+function parseSender(s: string): "USER" | "AI" | "SYSTEM" | "SCENE" {
+  if (s === "USER" || s === "AI" || s === "SYSTEM" || s === "SCENE") return s;
   console.warn(`Unknown sender "${s}" — defaulting to SYSTEM`);
   return "SYSTEM";
 }
@@ -40,6 +41,7 @@ export default function App() {
   const [suggestedActions, setSuggestedActions] = useState<string[]>([]);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
+  const [showMap, setShowMap] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
 
@@ -171,7 +173,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  const pushTerminalLog = (text: string, sender: "USER" | "AI" | "SYSTEM") => {
+  const pushTerminalLog = (text: string, sender: "USER" | "AI" | "SYSTEM" | "SCENE") => {
     if (!user) return;
     addDoc(collection(db, 'ships', user.uid, 'terminalHistory'), {
       text,
@@ -196,6 +198,11 @@ export default function App() {
       const aiResponse: AIResponse = await sendMessage(command, history);
 
       // 3. Write AI response + ship update in parallel (fire & forget)
+      //    Scene description (if any) is pushed first so it renders above
+      //    Aegis's dialogue — establishing the camera before the voice.
+      if (aiResponse.scene_description && aiResponse.scene_description.trim()) {
+        pushTerminalLog(aiResponse.scene_description, "SCENE");
+      }
       pushTerminalLog(aiResponse.terminal_output, "AI");
 
       // 4. Update alarms & suggested actions for the UI
@@ -242,6 +249,7 @@ export default function App() {
       setActiveAlarms([]);
       setSuggestedActions([]);
       setShowSidebar(false);
+      setShowMap(false);
       initializationTriggered.current = false;
     } catch (err) {
       console.error('Sign out failed:', err);
@@ -338,6 +346,14 @@ export default function App() {
             <span className="text-amber-400">Online</span>
           </div>
           <button
+            onClick={() => setShowMap(true)}
+            className="flex items-center gap-1 border border-cyan-500/30 text-cyan-400/80 hover:text-cyan-300 hover:border-cyan-400/60 px-2 py-1 transition-colors cursor-pointer"
+            title="Open ship schematic"
+          >
+            <MapIcon className="w-3 h-3" />
+            <span className="hidden sm:inline">Map</span>
+          </button>
+          <button
             onClick={() => setShowResetConfirm(true)}
             className="flex items-center gap-1 border border-rose-500/30 text-rose-400/70 hover:text-rose-300 hover:border-rose-500/60 px-2 py-1 transition-colors cursor-pointer"
             title="Reset game"
@@ -348,11 +364,13 @@ export default function App() {
         </div>
       </div>
 
-      <ResetConfirmModal 
-        showResetConfirm={showResetConfirm} 
-        setShowResetConfirm={setShowResetConfirm} 
-        handleReset={handleReset} 
+      <ResetConfirmModal
+        showResetConfirm={showResetConfirm}
+        setShowResetConfirm={setShowResetConfirm}
+        handleReset={handleReset}
       />
+
+      <ShipMap open={showMap} onClose={() => setShowMap(false)} />
 
       {/* Main layout */}
       <div className="flex flex-1 overflow-hidden relative">

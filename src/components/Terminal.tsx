@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 export interface LogEntry {
   id: string;
-  sender: "SYSTEM" | "AI" | "USER";
+  sender: "SYSTEM" | "AI" | "USER" | "SCENE";
   text: string;
   timestamp: number;
 }
@@ -104,7 +104,7 @@ export function Terminal({ logs, logsLoaded, onCommand, isGenerating, suggestedA
           }
           return prev;
         });
-      } else if (log.sender === 'AI' || log.sender === 'SYSTEM') {
+      } else if (log.sender === 'AI' || log.sender === 'SYSTEM' || log.sender === 'SCENE') {
         setDisplayedText(prev => {
           if (prev[log.id] === undefined) {
             return { ...prev, [log.id]: '' };
@@ -177,6 +177,10 @@ export function Terminal({ logs, logsLoaded, onCommand, isGenerating, suggestedA
             ) : log.sender === "SYSTEM" ? (
               <div className="text-rose-400/90 ml-4 mb-2 whitespace-pre-wrap">
                 [SYSTEM]: {displayedText[log.id] ?? ""}
+              </div>
+            ) : log.sender === "SCENE" ? (
+              <div className="text-amber-300/80 italic ml-4 mb-2 whitespace-pre-wrap border-l-2 border-amber-500/40 pl-3">
+                {displayedText[log.id] ?? ""}
               </div>
             ) : (
               <div className="text-emerald-400/90 ml-4 mb-2 whitespace-pre-wrap">

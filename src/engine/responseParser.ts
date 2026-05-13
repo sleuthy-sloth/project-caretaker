@@ -1,5 +1,6 @@
 export interface ParsedAIResponse {
   terminal_output: string;
+  scene_description: string;
   ship_status: { power_level: number; hull_integrity: number; stress_level: string } | null;
   active_alarms: string[];
   suggested_actions: string[];
@@ -54,12 +55,18 @@ function extractFields(raw: string): ParsedAIResponse {
     if (textMatch) terminal_output = textMatch[1];
   }
 
+  // 5. Extract Scene Description (atmospheric setting text)
+  let scene_description = "";
+  const sceneMatch = raw.match(/"scene_description"\s*:\s*"([^"]+)"/);
+  if (sceneMatch) scene_description = sceneMatch[1];
+
   // Default values if no data found
   if (active_alarms.length === 0) active_alarms = ["PARTIAL_PARSE_RECOVERY"];
   if (suggested_actions.length === 0) suggested_actions = ["DIAGNOSE SYSTEMS", "ENTER COMMAND"];
 
   return {
     terminal_output: terminal_output.trim() || "SIGNAL CORRUPTED. RETRANSMITTING...",
+    scene_description,
     ship_status: {
       power_level: clamp(Number(powerMatch?.[1]) || 50, 0, 100),
       hull_integrity: clamp(Number(hullMatch?.[1]) || 50, 0, 100),
@@ -93,6 +100,10 @@ export function parseAIResponse(responseText: string): ParsedAIResponse {
     if (!["Nominal", "Elevated", "Critical"].includes(parsed.ship_status.stress_level)) {
       parsed.ship_status.stress_level = "Elevated";
     }
+  }
+
+  if (typeof parsed.scene_description !== "string") {
+    parsed.scene_description = "";
   }
 
   return parsed;
