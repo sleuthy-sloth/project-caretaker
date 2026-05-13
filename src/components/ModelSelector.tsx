@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AVAILABLE_MODELS, isMobileDevice } from '../lib/models';
-import { CLOUD_MODEL_ID } from '../hooks/useCaretakerAI';
+function isCloudModel(modelId: string): boolean {
+  return modelId.startsWith('cloud-');
+}
 
 interface ModelSelectorProps {
   handleModelSelect: (modelId: string) => void;
@@ -32,7 +34,7 @@ export function ModelSelector({ handleModelSelect }: ModelSelectorProps) {
     : AVAILABLE_MODELS;
 
   const isLocalDisabled = (modelId: string) =>
-    modelId !== CLOUD_MODEL_ID && webGPU === 'unavailable';
+    !isCloudModel(modelId) && webGPU === 'unavailable';
 
   const webGpuHelpText = useMemo(() => {
     if (isChromeiOS) {
@@ -69,7 +71,7 @@ export function ModelSelector({ handleModelSelect }: ModelSelectorProps) {
         <div className="z-10 grid grid-cols-1 md:grid-cols-2 gap-4 max-w-5xl w-full">
           {visibleModels.map(model => {
             const disabled = isLocalDisabled(model.id);
-            const isCloud = model.id === CLOUD_MODEL_ID;
+            const isCloud = isCloudModel(model.id);
             return (
               <button
                 key={model.id}

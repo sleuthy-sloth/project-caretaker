@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Terminal, LogEntry } from './components/Terminal';
-import { useCaretakerAI, AIResponse, ChatHistoryMessage, CLOUD_MODEL_ID } from './hooks/useCaretakerAI';
+import { useCaretakerAI, AIResponse, ChatHistoryMessage } from './hooks/useCaretakerAI';
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -341,6 +341,16 @@ export default function App() {
             <span className="opacity-40 text-xs">Model</span>
             <span className="text-cyan-400">{AVAILABLE_MODELS.find(m => m.id === selectedModel)?.name || selectedModel}</span>
           </div>
+          <button
+            onClick={() => {
+              setSelectedModel(null);
+              initializationTriggered.current = false;
+            }}
+            className="hidden sm:flex items-center gap-1 border border-cyan-500/30 text-cyan-400/80 hover:text-cyan-300 hover:border-cyan-400/60 px-2 py-1 transition-colors cursor-pointer"
+            title="Switch model"
+          >
+            Switch Model
+          </button>
           <div className="flex flex-col items-end">
             <span className="opacity-40 text-xs">Sync</span>
             <span className="text-amber-400">Online</span>

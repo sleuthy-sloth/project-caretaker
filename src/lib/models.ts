@@ -1,4 +1,4 @@
-import { CLOUD_MODEL_ID } from '../hooks/useCaretakerAI';
+import { CLOUD_MODEL_AUTO_ID } from '../hooks/useCaretakerAI';
 
 export interface ModelOption {
   id: string;
@@ -10,10 +10,31 @@ export interface ModelOption {
 
 export const AVAILABLE_MODELS: ModelOption[] = [
   {
-    id: CLOUD_MODEL_ID,
-    name: "Cloud AI",
-    description: "Runs on remote cloud servers via a large language model. Best narrative. Instant start, no download. Requires internet.",
+    id: CLOUD_MODEL_AUTO_ID,
+    name: "Cloud AI (Auto)",
+    description: "Runs on remote cloud providers with automatic fallback. Best reliability. Instant start, no download. Requires internet.",
     recommended: true,
+    mobileSafe: true
+  },
+  {
+    id: "cloud-gemini",
+    name: "Cloud AI (Gemini)",
+    description: "Force Google Gemini route. Fast and cheap when available.",
+    recommended: false,
+    mobileSafe: true
+  },
+  {
+    id: "cloud-openrouter",
+    name: "Cloud AI (OpenRouter)",
+    description: "Force OpenRouter route. Useful when other providers are throttled.",
+    recommended: false,
+    mobileSafe: true
+  },
+  {
+    id: "cloud-groq",
+    name: "Cloud AI (Groq)",
+    description: "Force Groq route for consistent speed and style.",
+    recommended: false,
     mobileSafe: true
   },
   {

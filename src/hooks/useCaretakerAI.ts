@@ -20,7 +20,11 @@ export interface ChatHistoryMessage {
   content: string;
 }
 
-export const CLOUD_MODEL_ID = "groq-cloud";
+export const CLOUD_MODEL_AUTO_ID = "cloud-auto";
+
+function isCloudModel(modelId: string): boolean {
+  return modelId.startsWith("cloud-");
+}
 
 export function useCaretakerAI() {
   const workerRef = useRef<Worker | null>(null);
@@ -35,6 +39,7 @@ export function useCaretakerAI() {
   const resolveRef = useRef<((val: AIResponse) => void) | null>(null);
   const rejectRef = useRef<((err: string) => void) | null>(null);
   const isCloudRef = useRef(false);
+  const activeCloudModelRef = useRef(CLOUD_MODEL_AUTO_ID);
   const generationTimeoutRef = useRef<number | null>(null);
 
   const clearGenerationTimeout = useCallback(() => {
@@ -103,7 +108,8 @@ export function useCaretakerAI() {
   }, [clearGenerationTimeout]);
 
   const initAI = useCallback((modelId: string) => {
-    if (modelId === CLOUD_MODEL_ID) {
+    if (isCloudModel(modelId)) {
+      activeCloudModelRef.current = modelId;
       isCloudRef.current = true;
       setIsCloudMode(true);
       setIsInitializing(false);
@@ -129,7 +135,7 @@ export function useCaretakerAI() {
     if (isCloudRef.current) {
       setIsGenerating(true);
       setError(null);
-      return sendGroqMessage(prompt, history)
+      return sendGroqMessage(prompt, history, activeCloudModelRef.current)
         .then(response => {
           setIsGenerating(false);
           return response;
