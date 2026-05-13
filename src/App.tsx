@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Terminal, LogEntry } from './components/Terminal';
-import { useCaretakerAI, AIResponse, ChatHistoryMessage } from './hooks/useCaretakerAI';
+import { useCaretakerAI, AIResponse, ChatHistoryMessage, CLOUD_MODEL_ID } from './hooks/useCaretakerAI';
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -27,24 +27,31 @@ interface ModelOption {
 
 const AVAILABLE_MODELS: ModelOption[] = [
   {
+    id: CLOUD_MODEL_ID,
+    name: "Groq Cloud",
+    description: "Runs on Groq's servers via Llama 3.3 70B. Best narrative. Instant start, no download. Requires internet.",
+    recommended: true,
+    mobileSafe: true
+  },
+  {
     id: "Qwen2.5-0.5B-Instruct-q4f16_1-MLC",
     name: "Qwen 2.5 0.5B",
-    description: "Tiny (~360MB). Loads on most mobile devices. Narrative is basic but functional.",
+    description: "Tiny local model (~360MB). Runs offline in browser via WebGPU. Basic narrative.",
     recommended: false,
     mobileSafe: true
   },
   {
     id: "Llama-3.2-1B-Instruct-q4f16_1-MLC",
     name: "Llama 3.2 1B",
-    description: "Small (~880MB). Better than 0.5B; still mobile-capable on recent phones.",
+    description: "Small local model (~880MB). Runs offline via WebGPU. Better than 0.5B on recent phones.",
     recommended: false,
     mobileSafe: true
   },
   {
     id: "gemma-2b-it-q4f32_1-MLC",
     name: "Gemma 2B",
-    description: "Mid-size (~1.4GB). Solid narrative on desktop. Will crash most phones.",
-    recommended: true,
+    description: "Mid-size local model (~1.4GB). Solid offline narrative on desktop. Will crash most phones.",
+    recommended: false,
     mobileSafe: false
   },
   {
@@ -113,7 +120,7 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const initializationTriggered = useRef(false);
 
-  const { isInitializing, downloadProgress, progressText, isGenerating, isReady, error, initAI, sendMessage } = useCaretakerAI();
+  const { isInitializing, downloadProgress, progressText, isGenerating, isReady, isCloudMode, error, initAI, sendMessage } = useCaretakerAI();
 
   // Auth Effect
   useEffect(() => {
@@ -420,8 +427,10 @@ export default function App() {
         </div>
         <div className="flex items-center gap-4 md:gap-8 text-[10px] uppercase tracking-tighter">
           <div className="hidden sm:flex flex-col">
-            <span className="opacity-40 text-xs">WebGPU</span>
-            <span className="text-emerald-400">Active</span>
+            <span className="opacity-40 text-xs">{isCloudMode ? "Engine" : "WebGPU"}</span>
+            <span className={isCloudMode ? "text-violet-400" : "text-emerald-400"}>
+              {isCloudMode ? "Groq Cloud" : "Active"}
+            </span>
           </div>
           <div className="hidden md:flex flex-col">
             <span className="opacity-40 text-xs">Model</span>
