@@ -83,9 +83,10 @@ self.onmessage = async (event) => {
         : prebuiltAppConfig;
 
       activeModelId = payload.modelId;
-      const isQwen = activeModelId.includes("Qwen");
       
-      const chatOpts = isQwen ? { context_window_size: 8192 } : undefined;
+      // All our local models need an 8192 context window because the 
+      // system prompt alone is ~4500 tokens. 4096 will crash them.
+      const chatOpts = { context_window_size: 8192 };
 
       await engine.reload(payload.modelId, chatOpts, appConfig);
       clearInterval(stallTimer);
@@ -98,9 +99,7 @@ self.onmessage = async (event) => {
       const rawHistory: Array<{ role: "user" | "assistant"; content: string }> =
         Array.isArray(payload.history) ? payload.history : [];
 
-      // Qwen 2.5 0.5B normally defaults to 4096, but we overridden it to 8192
-      // since the system prompt is ~4000 tokens.
-      const ctxSize = activeModelId.includes("Qwen") ? 8192 : 8192;
+      const ctxSize = 8192;
       const history = trimHistory(rawHistory, payload.prompt, ctxSize);
 
       const messages = [
