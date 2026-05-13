@@ -1,0 +1,39 @@
+{
+  "entities": {
+    "ShipState": {
+      "title": "Ship State",
+      "description": "The current state of the player's ship",
+      "type": "object",
+      "properties": {
+        "hull": { "type": "number", "description": "Hull integrity percentage" },
+        "power": { "type": "number", "description": "Power matrix percentage" },
+        "stress": { "type": "string", "description": "Hull stress state (e.g. WARN, OK)" },
+        "userId": { "type": "string", "description": "Owner user ID" },
+        "updatedAt": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["hull", "power", "stress", "userId", "updatedAt", "createdAt"]
+    },
+    "TerminalLog": {
+      "title": "Terminal Log",
+      "description": "A single entry in the terminal history",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "sender": { "type": "string", "enum": ["USER", "AI", "SYSTEM"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["text", "sender", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/ships/{userId}": {
+      "schema": "ShipState",
+      "description": "Ship state per user, where document ID is userId"
+    },
+    "/ships/{userId}/terminalHistory/{logId}": {
+      "schema": "TerminalLog",
+      "description": "Terminal logs for the ship"
+    }
+  }
+}

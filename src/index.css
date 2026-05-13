@@ -1,0 +1,62 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Space+Mono:wght@700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL,GRAD@100..700,0..1,-50..200&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-surface-container-lowest: #0e0e0e;
+  --color-primary-fixed-dim: #00e61b;
+  --color-error: #ffb4ab;
+  --color-outline-variant: #3c4b36;
+  --color-outline: #85967d;
+
+  --font-display-lg: "JetBrains Mono", monospace;
+  --font-headline-md: "JetBrains Mono", monospace;
+  --font-body-base: "JetBrains Mono", monospace;
+  --font-label-caps: "Space Mono", monospace;
+  --font-code-terminal: "JetBrains Mono", monospace;
+}
+
+@layer utilities {
+  .text-glow {
+    text-shadow: 0 0 2px #00e61b;
+  }
+  
+  .border-glow {
+    box-shadow: 0 0 2px #00e61b, inset 0 0 2px #00e61b;
+  }
+  
+  .border-glow-muted {
+    box-shadow: 0 0 1px #1a801a, inset 0 0 1px #1a801a;
+    border-color: #1a801a !important;
+  }
+
+  .pulse-cursor {
+    animation: blink 1s step-end infinite;
+  }
+
+  .latency-blink {
+    animation: blink 2s step-end infinite;
+  }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #050505;
+  border-left: 1px solid #1a801a;
+}
+::-webkit-scrollbar-thumb {
+  background: #00e61b;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background-color: #050505;
+}
