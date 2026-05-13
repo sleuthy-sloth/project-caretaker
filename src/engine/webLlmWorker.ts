@@ -48,7 +48,12 @@ self.onmessage = async (event) => {
 
   if (type === "INIT") {
     try {
-      engine = new MLCEngine();
+      const appConfig = isIOS()
+        ? { ...prebuiltAppConfig, useIndexedDBCache: false }
+        : prebuiltAppConfig;
+
+      engine = new MLCEngine({ appConfig });
+      activeModelId = payload.modelId;
 
       let lastProgressAt = Date.now();
 
@@ -78,17 +83,10 @@ self.onmessage = async (event) => {
         }
       }, 5_000);
 
-      const appConfig = isIOS()
-        ? { ...prebuiltAppConfig, useIndexedDBCache: false }
-        : prebuiltAppConfig;
-
-      activeModelId = payload.modelId;
-      
-      // All our local models need an 8192 context window because the 
       // system prompt alone is ~4500 tokens. 4096 will crash them.
       const chatOpts = { context_window_size: 8192 };
 
-      await engine.reload(payload.modelId, chatOpts, appConfig);
+      await engine.reload(payload.modelId, chatOpts);
       clearInterval(stallTimer);
       self.postMessage({ type: "INIT_COMPLETE" });
     } catch (error) {
