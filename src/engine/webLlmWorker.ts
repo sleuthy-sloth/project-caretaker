@@ -19,7 +19,10 @@ self.onmessage = async (event) => {
     try {
       engine = new MLCEngine();
 
+      let lastProgressAt = Date.now();
+
       const initProgressCallback: InitProgressCallback = (initProgress) => {
+        lastProgressAt = Date.now();
         self.postMessage({
           type: "PROGRESS",
           payload: {
@@ -31,11 +34,25 @@ self.onmessage = async (event) => {
 
       engine.setInitProgressCallback(initProgressCallback);
 
+      // If no progress fires for 90 s the download has stalled (common on
+      // mobile due to memory pressure or CDN throttling). Send an error so
+      // the UI shows a clear message rather than an infinite spinner.
+      const stallTimer = setInterval(() => {
+        if (Date.now() - lastProgressAt > 90_000) {
+          clearInterval(stallTimer);
+          self.postMessage({
+            type: "ERROR",
+            payload: "Model download stalled — no progress for 90 s. This usually means your device ran out of memory or the network timed out. Try Cloud AI instead, or use a stable Wi-Fi connection on desktop.",
+          });
+        }
+      }, 5_000);
+
       const appConfig = isIOS()
         ? { ...prebuiltAppConfig, useIndexedDBCache: false }
         : prebuiltAppConfig;
 
       await engine.reload(payload.modelId, undefined, appConfig);
+      clearInterval(stallTimer);
       self.postMessage({ type: "INIT_COMPLETE" });
     } catch (error) {
       self.postMessage({ type: "ERROR", payload: String(error) });

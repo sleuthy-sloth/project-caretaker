@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="64" fill="#050507"/>
+  <!-- outer decorative ring -->
+  <circle cx="256" cy="256" r="200" fill="none" stroke="#164e63" stroke-width="5"/>
+  <!-- inner targeting ring -->
+  <circle cx="256" cy="256" r="112" fill="none" stroke="#0e7490" stroke-width="8"/>
+  <!-- crosshair arms -->
+  <line x1="56" y1="256" x2="144" y2="256" stroke="#22d3ee" stroke-width="6"/>
+  <line x1="368" y1="256" x2="456" y2="256" stroke="#22d3ee" stroke-width="6"/>
+  <line x1="256" y1="56" x2="256" y2="144" stroke="#22d3ee" stroke-width="6"/>
+  <line x1="256" y1="368" x2="256" y2="456" stroke="#22d3ee" stroke-width="6"/>
+  <!-- corner HUD brackets -->
+  <path d="M104,104 L104,152 M104,104 L152,104" stroke="#22d3ee" stroke-width="12" stroke-linecap="square" fill="none"/>
+  <path d="M408,104 L408,152 M408,104 L360,104" stroke="#22d3ee" stroke-width="12" stroke-linecap="square" fill="none"/>
+  <path d="M104,408 L104,360 M104,408 L152,408" stroke="#22d3ee" stroke-width="12" stroke-linecap="square" fill="none"/>
+  <path d="M408,408 L408,360 M408,408 L360,408" stroke="#22d3ee" stroke-width="12" stroke-linecap="square" fill="none"/>
+  <!-- centre reticle -->
+  <circle cx="256" cy="256" r="22" fill="#22d3ee"/>
+  <circle cx="256" cy="256" r="10" fill="#050507"/>
+</svg>
