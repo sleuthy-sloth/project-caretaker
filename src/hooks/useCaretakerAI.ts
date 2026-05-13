@@ -35,6 +35,24 @@ export function useCaretakerAI() {
   const resolveRef = useRef<((val: AIResponse) => void) | null>(null);
   const rejectRef = useRef<((err: string) => void) | null>(null);
   const isCloudRef = useRef(false);
+  const generationTimeoutRef = useRef<number | null>(null);
+
+  const clearGenerationTimeout = useCallback(() => {
+    if (generationTimeoutRef.current !== null) {
+      window.clearTimeout(generationTimeoutRef.current);
+      generationTimeoutRef.current = null;
+    }
+  }, []);
+
+  const failPendingGeneration = useCallback((message: string) => {
+    setIsGenerating(false);
+    setError(message);
+    if (rejectRef.current) {
+      rejectRef.current(message);
+      resolveRef.current = null;
+      rejectRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     workerRef.current = new Worker(new URL('../engine/webLlmWorker.ts', import.meta.url), {
@@ -56,6 +74,7 @@ export function useCaretakerAI() {
           setProgressText("AI CORE ONLINE");
           break;
         case "GENERATE_COMPLETE":
+          clearGenerationTimeout();
           setIsGenerating(false);
           if (resolveRef.current) {
             resolveRef.current(payload.parsed);
@@ -64,6 +83,7 @@ export function useCaretakerAI() {
           }
           break;
         case "ERROR":
+          clearGenerationTimeout();
           setIsInitializing(false);
           setIsGenerating(false);
           setError(payload);
@@ -77,9 +97,10 @@ export function useCaretakerAI() {
     };
 
     return () => {
+      clearGenerationTimeout();
       workerRef.current?.terminate();
     };
-  }, []);
+  }, [clearGenerationTimeout]);
 
   const initAI = useCallback((modelId: string) => {
     if (modelId === CLOUD_MODEL_ID) {
@@ -132,12 +153,19 @@ export function useCaretakerAI() {
       setIsGenerating(true);
       setError(null);
 
+      clearGenerationTimeout();
+      generationTimeoutRef.current = window.setTimeout(() => {
+        failPendingGeneration(
+          "Local generation timed out after 90 seconds. This can happen on iPhone due to memory limits. Retry, switch to Cloud AI, or use a smaller prompt.",
+        );
+      }, 90_000);
+
       workerRef.current.postMessage({
         type: 'GENERATE',
         payload: { prompt, history }
       });
     });
-  }, [isReady]);
+  }, [clearGenerationTimeout, failPendingGeneration, isReady]);
 
   return {
     isInitializing,
