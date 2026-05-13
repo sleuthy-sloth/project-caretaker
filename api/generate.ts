@@ -10,7 +10,13 @@ const OPENROUTER_MODEL = "openrouter/free"; // routes to whichever free model is
 
 // Uses Google's OpenAI-compatible endpoint
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-const GEMINI_MODEL = "gemini-3.1-flash-lite";
+// Tried in order; each cascades to the next on 429/503.
+// 3.1 Flash Lite has the highest RPM (15), so it goes first.
+const GEMINI_MODELS = [
+  "gemini-3.1-flash-lite",
+  "gemini-3.0-flash",
+  "gemini-2.5-flash",
+];
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -80,7 +86,11 @@ async function callOpenAICompatible(
   return { ok: true, content };
 }
 
-export default async function handler(req: Request): Promise<Response> {
+function isRetryable(status: number): boolean {
+  return status === 429 || status === 503;
+}
+
+
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
@@ -123,18 +133,21 @@ export default async function handler(req: Request): Promise<Response> {
   if (groqKey) {
     const result = await callOpenAICompatible(GROQ_API_URL, groqKey, GROQ_MODEL, messages, penaltyParams);
     if (result.ok) return json({ content: result.content });
-    if (result.status !== 429) return json({ error: result.error }, result.status);
-    // 429 → fall through to next provider
+    if (!isRetryable(result.status)) return json({ error: result.error }, result.status);
+    // 429/503 → fall through to next provider
   }
 
-  // 2. Groq rate-limited (or unconfigured) → try Google Gemini
+  // 2. Groq rate-limited/unavailable (or unconfigured) → try Gemini models in order
   const geminiKey: string | undefined = penv?.GEMINI_API_KEY;
   if (geminiKey) {
     // Gemini does not accept frequency_penalty / presence_penalty — omit them
-    const result = await callOpenAICompatible(GEMINI_API_URL, geminiKey, GEMINI_MODEL, messages);
-    if (result.ok) return json({ content: result.content });
-    if (result.status !== 429) return json({ error: result.error }, result.status);
-    // 429 → fall through to OpenRouter
+    for (const model of GEMINI_MODELS) {
+      const result = await callOpenAICompatible(GEMINI_API_URL, geminiKey, model, messages);
+      if (result.ok) return json({ content: result.content });
+      if (!isRetryable(result.status)) return json({ error: result.error }, result.status);
+      // 429/503 → try next Gemini model
+    }
+    // all Gemini models unavailable → fall through to OpenRouter
   }
 
   // 3. Gemini rate-limited (or unconfigured) → try OpenRouter (auto-routes to live free models)
