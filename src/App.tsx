@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Terminal, LogEntry } from './components/Terminal';
-import { useCaretakerAI, AIResponse } from './hooks/useCaretakerAI';
+import { useCaretakerAI, AIResponse, ChatHistoryMessage } from './hooks/useCaretakerAI';
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -17,20 +17,64 @@ interface ActiveAlarm {
   text: string;
 }
 
-const AVAILABLE_MODELS = [
+interface ModelOption {
+  id: string;
+  name: string;
+  description: string;
+  recommended: boolean;
+  mobileSafe: boolean;
+}
+
+const AVAILABLE_MODELS: ModelOption[] = [
+  {
+    id: "Qwen2.5-0.5B-Instruct-q4f16_1-MLC",
+    name: "Qwen 2.5 0.5B",
+    description: "Tiny (~360MB). Loads on most mobile devices. Narrative is basic but functional.",
+    recommended: false,
+    mobileSafe: true
+  },
+  {
+    id: "Llama-3.2-1B-Instruct-q4f16_1-MLC",
+    name: "Llama 3.2 1B",
+    description: "Small (~880MB). Better than 0.5B; still mobile-capable on recent phones.",
+    recommended: false,
+    mobileSafe: true
+  },
   {
     id: "gemma-2b-it-q4f32_1-MLC",
     name: "Gemma 2B",
-    description: "Smaller, faster model. Lower VRAM requirements, less precise.",
-    recommended: true
+    description: "Mid-size (~1.4GB). Solid narrative on desktop. Will crash most phones.",
+    recommended: true,
+    mobileSafe: false
   },
   {
     id: "Llama-3-8B-Instruct-q4f32_1-MLC",
     name: "Llama-3 8B",
-    description: "Larger, more powerful model. Better narrative, requires more VRAM.",
-    recommended: false
+    description: "Large (~5GB). Best narrative, requires desktop with strong GPU.",
+    recommended: false,
+    mobileSafe: false
   }
 ];
+
+function isMobileDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod|Android|Mobile/i.test(ua)) return true;
+  // iPad on iOS 13+ reports as desktop Mac; detect via touch points
+  if (ua.includes('Mac') && navigator.maxTouchPoints > 1) return true;
+  return false;
+}
+
+const MAX_HISTORY_MESSAGES = 8;
+
+function buildChatHistory(logs: LogEntry[]): ChatHistoryMessage[] {
+  const conversational = logs.filter(l => l.sender === 'USER' || l.sender === 'AI');
+  const recent = conversational.slice(-MAX_HISTORY_MESSAGES);
+  return recent.map(l => ({
+    role: l.sender === 'USER' ? 'user' : 'assistant',
+    content: l.text
+  }));
+}
 
 function parseSender(s: string): "USER" | "AI" | "SYSTEM" {
   if (s === "USER" || s === "AI" || s === "SYSTEM") return s;
@@ -215,7 +259,8 @@ export default function App() {
 
     // 2. Generate AI response (this legitimately blocks — AI is the bottleneck)
     try {
-      const aiResponse: AIResponse = await sendMessage(command);
+      const history = buildChatHistory(logs);
+      const aiResponse: AIResponse = await sendMessage(command, history);
 
       // 3. Write AI response + ship update in parallel (fire & forget)
       pushTerminalLog(aiResponse.terminal_output, "AI");
@@ -311,18 +356,28 @@ export default function App() {
   }
 
   if (!selectedModel) {
+    const isMobile = isMobileDevice();
+    const visibleModels = isMobile
+      ? AVAILABLE_MODELS.filter(m => m.mobileSafe)
+      : AVAILABLE_MODELS;
+
     return (
-      <div className="h-screen w-full bg-[#050507] text-[#a0aec0] flex flex-col items-center justify-center font-mono relative overflow-hidden">
+      <div className="h-screen w-full bg-[#050507] text-[#a0aec0] flex flex-col items-center justify-center font-mono relative overflow-hidden p-4">
         <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-[0.03]" style={{ backgroundImage: "repeating-linear-gradient(0deg, #fff, #fff 1px, transparent 1px, transparent 2px)" }}></div>
-        <div className="z-10 text-center mb-8 text-cyan-500/40 text-xs tracking-widest uppercase">
+        <div className="z-10 text-center mb-6 text-cyan-500/40 text-xs tracking-widest uppercase">
            [ SELECT ORACLE ENGINE MODEL ]
         </div>
-        <div className="z-10 flex flex-col md:flex-row gap-6 max-w-4xl w-full px-6">
-          {AVAILABLE_MODELS.map(model => (
+        {isMobile && (
+          <div className="z-10 mb-6 max-w-2xl border border-amber-500/40 bg-amber-950/20 px-4 py-3 text-[11px] text-amber-300/90 leading-relaxed">
+            <span className="text-amber-400 font-bold">MOBILE WARNING:</span> iOS and Android browsers cap per-tab memory and have limited WebGPU support. Only the smallest models are offered here. Narrative quality is reduced. For the full experience, open this page on a desktop browser.
+          </div>
+        )}
+        <div className="z-10 grid grid-cols-1 md:grid-cols-2 gap-4 max-w-5xl w-full">
+          {visibleModels.map(model => (
             <button
               key={model.id}
               onClick={() => handleModelSelect(model.id)}
-              className="flex-1 flex flex-col border border-cyan-500/50 p-6 text-left hover:bg-cyan-900/30 transition-colors group relative"
+              className="flex flex-col border border-cyan-500/50 p-6 text-left hover:bg-cyan-900/30 transition-colors group relative"
             >
               {model.recommended && (
                 <div className="absolute -top-3 right-4 bg-cyan-600 text-black text-[10px] font-bold px-2 py-0.5 uppercase">

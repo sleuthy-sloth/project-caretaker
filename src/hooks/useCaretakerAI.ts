@@ -13,6 +13,11 @@ export interface AIResponse {
   suggested_actions: string[];
 }
 
+export interface ChatHistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export function useCaretakerAI() {
   const workerRef = useRef<Worker | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
@@ -81,21 +86,21 @@ export function useCaretakerAI() {
     workerRef.current.postMessage({ type: 'INIT', payload: { modelId } });
   }, []);
 
-  const sendMessage = useCallback((prompt: string): Promise<AIResponse> => {
+  const sendMessage = useCallback((prompt: string, history: ChatHistoryMessage[] = []): Promise<AIResponse> => {
     return new Promise((resolve, reject) => {
       if (!workerRef.current || !isReady) {
         reject("AI Core is currently offline or initializing.");
         return;
       }
-      
+
       resolveRef.current = resolve;
       rejectRef.current = reject;
       setIsGenerating(true);
       setError(null);
-      
+
       workerRef.current.postMessage({
         type: 'GENERATE',
-        payload: { prompt }
+        payload: { prompt, history }
       });
     });
   }, [isReady]);
