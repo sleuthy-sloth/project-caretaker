@@ -150,7 +150,10 @@ export default async function handler(req: Request): Promise<Response> {
   // 3. Gemini rate-limited (or unconfigured) → try OpenRouter (auto-routes to live free models)
   const openrouterKey: string | undefined = penv?.OPENROUTER_API_KEY;
   if (openrouterKey) {
-    const result = await callOpenAICompatible(OPENROUTER_API_URL, openrouterKey, OPENROUTER_MODEL, messages, penaltyParams);
+    // OpenRouter's free model pool often includes models that reject response_format.
+    // Setting it to undefined removes it from the JSON payload.
+    const openRouterParams = { ...penaltyParams, response_format: undefined };
+    const result = await callOpenAICompatible(OPENROUTER_API_URL, openrouterKey, OPENROUTER_MODEL, messages, openRouterParams);
     if (result.ok) return json({ content: result.content });
     console.warn(`OpenRouter failed (${result.status}): ${result.error}. No more providers.`);
     return json({ error: result.error }, result.status);
