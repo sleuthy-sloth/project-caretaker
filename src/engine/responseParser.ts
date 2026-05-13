@@ -10,42 +10,81 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function extractFields(raw: string): ParsedAIResponse {
-  const textMatch = raw.match(/terminal_output["\s:]+([^"]+)/);
-  const powerMatch = raw.match(/power_level["\s:]+(\d+)/);
-  const hullMatch = raw.match(/hull_integrity["\s:]+(\d+)/);
-  const stressMatch = raw.match(/stress_level["\s:]+(\w+)/);
+  // 1. Try to parse numbers/statuses from markdown text
+  const powerMatch = raw.match(/power level.*?\s(\d+)/i) || raw.match(/power_level["\s:]+(\d+)/);
+  const hullMatch = raw.match(/hull integrity.*?\s(\d+)/i) || raw.match(/hull_integrity["\s:]+(\d+)/);
+  
+  // Extract stress level
+  const stressRawMatch = raw.match(/stress level.*?\s([a-z]+)/i) || raw.match(/stress_level["\s:]+([a-z]+)/i);
+  let stress_level = "Elevated";
+  if (stressRawMatch && stressRawMatch[1]) {
+    const rawStress = stressRawMatch[1].toLowerCase();
+    if (rawStress.includes("critical")) stress_level = "Critical";
+    else if (rawStress.includes("nominal")) stress_level = "Nominal";
+  }
+
+  // 2. Extract Alarms
+  const alarmsMatch = raw.match(/\*\*ACTIVE ALARMS\*\*\s*([\s\S]*?)(?=\*\*|$)/i) || raw.match(/"active_alarms"\s*:\s*\[([\s\S]*?)\]/);
+  let active_alarms: string[] = [];
+  if (alarmsMatch) {
+    active_alarms = alarmsMatch[1]
+      .split('\n')
+      .map(l => l.replace(/^[-\s"]+/, '').replace(/["\,]+$/, '').trim())
+      .filter(Boolean);
+  }
+
+  // 3. Extract Suggested Actions
+  const actionsMatch = raw.match(/\*\*SUGGESTED ACTIONS\*\*\s*([\s\S]*?)(?=\*\*|$)/i) || raw.match(/"suggested_actions"\s*:\s*\[([\s\S]*?)\]/);
+  let suggested_actions: string[] = [];
+  if (actionsMatch) {
+    suggested_actions = actionsMatch[1]
+      .split('\n')
+      .map(l => l.replace(/^[\d\.\s"-]+/, '').replace(/["\,]+$/, '').trim())
+      .filter(Boolean);
+  }
+
+  // 4. Extract Terminal Output Text
+  let terminal_output = raw;
+  const shipStatusIndex = raw.indexOf("**SHIP STATUS**");
+  if (shipStatusIndex !== -1) {
+    terminal_output = raw.substring(0, shipStatusIndex).replace(/\*\*TERMINAL OUTPUT\*\*/i, '').trim();
+  } else {
+    // If it was partial JSON but malformed
+    const textMatch = raw.match(/"terminal_output"\s*:\s*"([^"]+)"/);
+    if (textMatch) terminal_output = textMatch[1];
+  }
+
+  // Default values if no data found
+  if (active_alarms.length === 0) active_alarms = ["PARTIAL_PARSE_RECOVERY"];
+  if (suggested_actions.length === 0) suggested_actions = ["DIAGNOSE SYSTEMS", "ENTER COMMAND"];
 
   return {
-    terminal_output: textMatch?.[1]?.replace(/["{},]/g, '').trim() || "SIGNAL CORRUPTED. RETRANSMITTING...",
+    terminal_output: terminal_output.trim() || "SIGNAL CORRUPTED. RETRANSMITTING...",
     ship_status: {
       power_level: clamp(Number(powerMatch?.[1]) || 50, 0, 100),
       hull_integrity: clamp(Number(hullMatch?.[1]) || 50, 0, 100),
-      stress_level: ["Nominal", "Elevated", "Critical"].includes(stressMatch?.[1] || "")
-        ? stressMatch![1]
-        : "Elevated",
+      stress_level,
     },
-    active_alarms: ["PARTIAL_PARSE_RECOVERY"],
-    suggested_actions: ["DIAGNOSE SYSTEMS", "ENTER COMMAND"],
+    active_alarms,
+    suggested_actions,
   };
 }
 
 export function parseAIResponse(responseText: string): ParsedAIResponse {
-  let parsed: ParsedAIResponse;
+  let parsed: ParsedAIResponse | null = null;
 
+  // Try parsing pure JSON first (find bounded json if wrapped in markdown)
   const jsonMatch = responseText.match(/\{[\s\S]*\}/);
   if (jsonMatch) {
     try {
       parsed = JSON.parse(jsonMatch[0]);
     } catch {
-      parsed = extractFields(responseText);
+      // JSON parse failed, silently fall through to extractFields
     }
-  } else {
-    parsed = {
-      terminal_output: responseText.trim() || "ERROR: COGNITIVE MATRIX FAULT. SIGNAL DEGRADATION ON CHANNEL.",
-      ship_status: null,
-      active_alarms: ["RESPONSE_FORMAT_FAULT"],
-      suggested_actions: ["ENTER COMMAND", "REQUEST REPEAT"],
-    };
+  }
+
+  if (!parsed) {
+    parsed = extractFields(responseText);
   }
 
   if (parsed.ship_status) {

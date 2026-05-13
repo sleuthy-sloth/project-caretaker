@@ -45,6 +45,7 @@ self.onmessage = async (event) => {
         max_tokens: 1024,
         frequency_penalty: 0.7,
         presence_penalty: 0.4,
+        response_format: { type: "json_object" },
       });
 
       const responseText = reply.choices[0].message.content || "";

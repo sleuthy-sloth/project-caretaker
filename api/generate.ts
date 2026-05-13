@@ -70,6 +70,7 @@ export default async function handler(req: Request): Promise<Response> {
         max_tokens: 1024,
         frequency_penalty: 0.7,
         presence_penalty: 0.4,
+        response_format: { type: "json_object" },
       }),
     });
   } catch (err) {
