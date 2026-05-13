@@ -13,6 +13,16 @@ function isIOS(): boolean {
   return /iPhone|iPad|iPod/i.test((self as unknown as { navigator: Navigator }).navigator?.userAgent ?? "");
 }
 
+
+function webGPUHint(): string {
+  const nav = (self as unknown as { navigator?: Navigator }).navigator;
+  const ua = nav?.userAgent ?? "";
+  if (/CriOS\//.test(ua)) {
+    return "Chrome on iOS currently cannot run these local WebGPU models. Switch to Safari 17+ or use Cloud AI.";
+  }
+  return "WebGPU is unavailable on this browser/device. Use Cloud AI or a desktop browser with WebGPU enabled.";
+}
+
 // Trim conversation history so the full prompt fits within the model's context
 // window. Keeps the most-recent messages and drops older ones as needed.
 // Heuristic: 4 chars ≈ 1 token; 20 chars of overhead per message for role tags.
@@ -51,6 +61,10 @@ self.onmessage = async (event) => {
       const appConfig = isIOS()
         ? { ...prebuiltAppConfig, useIndexedDBCache: false }
         : prebuiltAppConfig;
+
+      if (!("gpu" in navigator)) {
+        throw new Error(webGPUHint());
+      }
 
       engine = new MLCEngine({ appConfig });
       activeModelId = payload.modelId;

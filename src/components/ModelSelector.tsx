@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { AVAILABLE_MODELS, isMobileDevice } from '../lib/models';
 import { CLOUD_MODEL_ID } from '../hooks/useCaretakerAI';
 
@@ -9,6 +9,10 @@ interface ModelSelectorProps {
 export function ModelSelector({ handleModelSelect }: ModelSelectorProps) {
   const isMobile = isMobileDevice();
   const [webGPU, setWebGPU] = useState<'checking' | 'available' | 'unavailable'>('checking');
+
+  const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent;
+  const isChromeiOS = /CriOS\//.test(ua);
+  const isChromeDesktop = /Chrome\//.test(ua) && !/Edg\//.test(ua) && !/OPR\//.test(ua);
 
   useEffect(() => {
     async function check() {
@@ -30,6 +34,16 @@ export function ModelSelector({ handleModelSelect }: ModelSelectorProps) {
   const isLocalDisabled = (modelId: string) =>
     modelId !== CLOUD_MODEL_ID && webGPU === 'unavailable';
 
+  const webGpuHelpText = useMemo(() => {
+    if (isChromeiOS) {
+      return 'Chrome on iPhone/iPad uses Apple\'s WebKit engine and currently cannot run WebGPU local models reliably. Use Cloud AI, or switch to Safari 17+.';
+    }
+    if (isChromeDesktop) {
+      return 'This Chrome build reports no WebGPU adapter. Update Chrome, enable hardware acceleration, and restart. If your GPU/driver is unsupported, use Cloud AI.';
+    }
+    return 'Your browser does not support WebGPU. Local models are disabled. Use Cloud AI, or try Safari 17+ / desktop Chrome.';
+  }, [isChromeDesktop, isChromeiOS]);
+
   return (
     // fixed inset-0 + overflow-y-auto works around body { overflow: hidden }
     <div className="fixed inset-0 overflow-y-auto bg-[#050507] text-[#a0aec0] font-mono z-50">
@@ -48,7 +62,7 @@ export function ModelSelector({ handleModelSelect }: ModelSelectorProps) {
 
         {webGPU === 'unavailable' && (
           <div className="z-10 mb-4 max-w-2xl border border-red-500/40 bg-red-950/20 px-4 py-3 text-[11px] text-red-300/90 leading-relaxed">
-            <span className="text-red-400 font-bold">WEBGPU UNAVAILABLE:</span> Your browser does not support WebGPU. Local models are disabled. Use <span className="text-red-300">Cloud AI</span>, or try Safari 17+ / desktop Chrome.
+            <span className="text-red-400 font-bold">WEBGPU UNAVAILABLE:</span> {webGpuHelpText} Use <span className="text-red-300">Cloud AI</span> for immediate play.
           </div>
         )}
 
