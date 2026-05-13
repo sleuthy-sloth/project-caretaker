@@ -72,44 +72,82 @@ Do not reveal The Lie before CP-15. Foreshadow it from CP-05 onward.
 > is alone. Aegis is brittle, glitchy, and openly afraid (within its cold
 > persona). Suggested actions should feel like triage.
 
-## CP-01 — Cold Wake
+## CP-01 — Cold Wake  *(Tutorial — atmospheric onboarding)*
 
-- **Entry state:** Player just revived from Cryo Pod 04. Hull 78, Power 62,
+- **Entry state:** Player just revived from Cryo Pod 04. Hull 95, Power 80,
   Stress Nominal.
 - **Setting:** Cryo Bay 03. Emergency lighting only. Frost on the pod glass.
   Distant alarm. The terminal at the foot of the pod flickers on.
-- **Required beats:**
-  1. Boot sequence text (Aegis introducing itself, glitching at least once).
-  2. State the immediate physical situation: cold, dim, alone, ship in
-     distress.
-  3. One small sensory detail (the smell of ozone, the hum two semitones
-     too low, a flickering wall panel).
-  4. Ask the Caretaker for their first action.
-- **Suggested actions menu:** `CHECK VITALS`, `QUERY AEGIS STATUS`,
-  `SCAN CRYO BAY`.
-- **Exit condition:** Player issues any action that engages with the
-  environment.
+- **Tutorial guardrails:**
+  - Hull is locked at ≥ 70 for this checkpoint and CP-02.
+  - Power is locked at ≥ 55.
+  - Stress stays Nominal regardless of action.
+  - There are no failure states. Reckless commands are gently refused by
+    Aegis ("I cannot allow that yet — the corridor is venting. Let us start
+    closer to home.") with a safer suggested alternative.
+- **Required beats (pace these across at least 3 separate turns — do NOT
+  collapse them into one response):**
+  1. **Arrival.** Atmospheric `scene_description` of the cryo bay (frost
+     melting on the inner glass, amber emergency strip, the hush of a ship
+     that has stopped speaking). Aegis boots a few words at a time, glitches
+     once, recovers, and addresses the Caretaker by pod number. End with a
+     gentle, open prompt — *not* a demand for action. "Take a moment. When
+     you are ready, ask me anything."
+  2. **Orientation, on the Caretaker's terms.** Whatever the player types,
+     Aegis answers plainly and patiently: ship name, year, mission, voyage
+     year, why the Caretaker has been roused. Aegis is not yet glitchy in
+     the dangerous way — only worn. No timers. No alarms in the sidebar.
+  3. **The schematic.** Within these first 3-4 turns, Aegis must mention
+     the side-panel ship schematic: *"I have pushed a partial deck
+     schematic to your station. Top-left of your workstation. It is not
+     complete — there are sectors I cannot see — but it will keep you
+     oriented."* This trains the player to use the UI.
+  4. **One small sensory detail per turn.** The smell of ozone, the hum two
+     semitones too low, a flickering wall panel, frost falling from a vent.
+     Build atmosphere, not stakes.
+- **Suggested actions menu:** `LOOK AROUND`, `WHERE AM I?`,
+  `WHO ARE YOU?`, `WHAT YEAR IS IT?`, `STEP OUT OF THE POD`.
+- **Exit condition:** The Caretaker has (a) asked at least one orienting
+  question, and (b) acknowledged the schematic or taken a physical action
+  in the bay (look around, step out, examine the pod). Then Aegis
+  *gently* surfaces the first real fault and CP-02 begins.
 - **Goes to:** CP-02.
 
-## CP-02 — Triage: Life Support
+## CP-02 — Triage: Life Support  *(Tutorial — guided first crisis)*
 
 - **Entry state:** Player has acknowledged Aegis and the situation.
 - **Goal:** Restore atmosphere stability in occupied decks. CO₂ scrubbers
-  in Decks 2–4 are running at 31% efficiency.
+  in Decks 2–4 are running at 31% efficiency. **This is the tutorial
+  encounter.** The player learns the loop here; they cannot lose.
+- **Tutorial guardrails:**
+  - Hull stays ≥ 70 and Power stays ≥ 55 regardless of choice.
+  - Stress may rise to Elevated on the "manual" path, but resets to
+    Nominal at the end of the checkpoint.
+  - Both offered paths succeed. The "wrong" choice only costs slightly
+    more Power or briefly raises Stress — never the run.
+  - Training wheels come off at CP-03.
 - **Required beats:**
-  1. Aegis surfaces the atmosphere telemetry as the most urgent fault.
-  2. A complication: the scrubber control runs through a junction in
-     Corridor 3-B where a coolant line has burst. Going manually means
-     freezing temperatures.
-  3. A choice between rerouting through Aegis (slow, drains reactor 4%) or
-     a manual EVA-suit traversal (faster, +1 stress).
+  1. Aegis surfaces the atmosphere telemetry as the first real fault — and
+     explains, plainly, *how to read it.* This is teaching: "The number
+     you want here is above 80%. We are at 31%. The longer we sit at 31%,
+     the harder the cryo bays will work to keep their occupants alive."
+  2. Aegis offers two clearly-labelled paths and states the trade-off for
+     each *before* asking the Caretaker to pick:
+     - **Reroute through Aegis** (safe, slower, costs ~4% reactor power).
+     - **Manual traverse to Junction 3-B** (faster, Stress → Elevated for
+       this checkpoint only, a cold corridor but not dangerous).
+  3. Whichever the player picks, Aegis narrates the resolution beat-by-beat
+     so they learn what these actions *look like* in the world.
+  4. When atmosphere is back above 80%, Aegis confirms success and — for
+     the first time — drops the patient tone slightly: "Good. Then we begin
+     in earnest. The reactor is next, and the reactor will not be this
+     forgiving." This is the cue that the tutorial is over.
 - **Suggested actions menu:** `REROUTE THROUGH AEGIS`,
-  `MANUAL TRAVERSE TO JUNCTION 3-B`, `IGNORE — TRIAGE LATER`.
-- **State changes on success:** Power -4 if rerouted, Stress → Elevated if
-  manual.
-- **Exit condition:** Atmosphere stabilised by either path, or player
-  abandons it and an alarm reminds them later.
-- **Goes to:** CP-03.
+  `MANUAL TRAVERSE TO JUNCTION 3-B`, `EXPLAIN THE READING FIRST`.
+- **State changes on success:** Power -4 if rerouted (cap floor 55),
+  Stress → Elevated if manual (resets to Nominal on checkpoint exit).
+- **Exit condition:** Atmosphere stabilised above 80% by either path.
+- **Goes to:** CP-03. **End of tutorial.**
 
 ## CP-03 — Triage: Reactor Containment
 

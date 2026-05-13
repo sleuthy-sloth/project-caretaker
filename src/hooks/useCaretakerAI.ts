@@ -9,6 +9,7 @@ export interface ShipStatus {
 
 export interface AIResponse {
   terminal_output: string;
+  scene_description: string;
   ship_status: ShipStatus | null;
   active_alarms: string[];
   suggested_actions: string[];
