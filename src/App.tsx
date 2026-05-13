@@ -6,71 +6,12 @@ import { signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvi
 import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Skull, AlertTriangle, RotateCcw, Ship, LogOut, PanelLeft, X } from 'lucide-react';
 
-interface ShipState {
-  hull: number;
-  power: number;
-  stress: string;
-}
-
-interface ActiveAlarm {
-  id: string;
-  text: string;
-}
-
-interface ModelOption {
-  id: string;
-  name: string;
-  description: string;
-  recommended: boolean;
-  mobileSafe: boolean;
-}
-
-const AVAILABLE_MODELS: ModelOption[] = [
-  {
-    id: CLOUD_MODEL_ID,
-    name: "Groq Cloud",
-    description: "Runs on Groq's servers via Llama 3.3 70B. Best narrative. Instant start, no download. Requires internet.",
-    recommended: true,
-    mobileSafe: true
-  },
-  {
-    id: "Qwen2.5-0.5B-Instruct-q4f16_1-MLC",
-    name: "Qwen 2.5 0.5B",
-    description: "Tiny local model (~360MB). Runs offline in browser via WebGPU. Basic narrative.",
-    recommended: false,
-    mobileSafe: true
-  },
-  {
-    id: "Llama-3.2-1B-Instruct-q4f16_1-MLC",
-    name: "Llama 3.2 1B",
-    description: "Small local model (~880MB). Runs offline via WebGPU. Better than 0.5B on recent phones.",
-    recommended: false,
-    mobileSafe: true
-  },
-  {
-    id: "gemma-2b-it-q4f32_1-MLC",
-    name: "Gemma 2B",
-    description: "Mid-size local model (~1.4GB). Solid offline narrative on desktop. Will crash most phones.",
-    recommended: false,
-    mobileSafe: false
-  },
-  {
-    id: "Llama-3-8B-Instruct-q4f32_1-MLC",
-    name: "Llama-3 8B",
-    description: "Large (~5GB). Best narrative, requires desktop with strong GPU.",
-    recommended: false,
-    mobileSafe: false
-  }
-];
-
-function isMobileDevice(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  const ua = navigator.userAgent;
-  if (/iPhone|iPad|iPod|Android|Mobile/i.test(ua)) return true;
-  // iPad on iOS 13+ reports as desktop Mac; detect via touch points
-  if (ua.includes('Mac') && navigator.maxTouchPoints > 1) return true;
-  return false;
-}
+import { SystemLockScreen } from './components/SystemLockScreen';
+import { ModelSelector } from './components/ModelSelector';
+import { ShipStatusSidebar } from './components/ShipStatusSidebar';
+import { ResetConfirmModal } from './components/ResetConfirmModal';
+import { ShipState, ActiveAlarm, normalizeStress } from './lib/types';
+import { AVAILABLE_MODELS } from './lib/models';
 
 const MAX_HISTORY_MESSAGES = 8;
 
@@ -87,22 +28,6 @@ function parseSender(s: string): "USER" | "AI" | "SYSTEM" {
   if (s === "USER" || s === "AI" || s === "SYSTEM") return s;
   console.warn(`Unknown sender "${s}" — defaulting to SYSTEM`);
   return "SYSTEM";
-}
-
-function normalizeStress(stress: string): string {
-  const lower = stress.toLowerCase();
-  if (lower === "critical" || lower === "elevated" || lower === "nominal") {
-    // Return capitalized form
-    return lower.charAt(0).toUpperCase() + lower.slice(1);
-  }
-  return "Elevated"; // safe default
-}
-
-function getStressBarWidth(stress: string): { width: string; color: string } {
-  const lower = stress.toLowerCase();
-  if (lower === "critical") return { width: "95%", color: "bg-rose-500" };
-  if (lower === "elevated") return { width: "60%", color: "bg-rose-400" };
-  return { width: "10%", color: "bg-emerald-500" };
 }
 
 export default function App() {
@@ -358,69 +283,11 @@ export default function App() {
   }
 
   if (!user) {
-    return (
-      <div className="h-dvh w-full bg-[#050507] text-[#a0aec0] flex flex-col items-center justify-center font-mono relative overflow-hidden">
-         <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-[0.03]" style={{ backgroundImage: "repeating-linear-gradient(0deg, #fff, #fff 1px, transparent 1px, transparent 2px)" }}></div>
-         <div className="z-10 text-center animate-pulse mb-8 text-cyan-500/40 text-xs tracking-widest uppercase">
-            [ SYSTEM LOCKED ]
-         </div>
-         <h1 className="text-3xl text-cyan-400 mb-8 tracking-widest uppercase z-10 font-bold drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]">AEGIS CORE</h1>
-         {authError && (
-           <div className="z-10 mb-6 max-w-md text-center">
-             <div className="border border-rose-500/40 bg-rose-950/20 px-4 py-3 text-[11px] text-rose-300/90 leading-relaxed">
-               <span className="text-rose-400 font-bold">AUTH ERROR:</span> {authError}
-             </div>
-           </div>
-         )}
-         <p className="text-xs opacity-40 mb-6 z-10 tracking-wider uppercase">GSS Theseus • Mission Year 147</p>
-         <button
-           onClick={handleLogin}
-           disabled={authLoading}
-           className="z-10 border border-cyan-500/50 text-cyan-400 px-6 py-2 uppercase tracking-widest hover:bg-cyan-900/30 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-         >
-           {authLoading ? 'Initializing...' : 'Initialize Session'}
-         </button>
-      </div>
-    );
+    return <SystemLockScreen authError={authError} authLoading={authLoading} handleLogin={handleLogin} />;
   }
 
   if (!selectedModel) {
-    const isMobile = isMobileDevice();
-    const visibleModels = isMobile
-      ? AVAILABLE_MODELS.filter(m => m.mobileSafe)
-      : AVAILABLE_MODELS;
-
-    return (
-      <div className="min-h-dvh w-full bg-[#050507] text-[#a0aec0] flex flex-col items-center justify-center font-mono relative p-4 py-8 overflow-y-auto">
-        <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-[0.03]" style={{ backgroundImage: "repeating-linear-gradient(0deg, #fff, #fff 1px, transparent 1px, transparent 2px)" }}></div>
-        <div className="z-10 text-center mb-6 text-cyan-500/40 text-xs tracking-widest uppercase">
-           [ SELECT ORACLE ENGINE MODEL ]
-        </div>
-        {isMobile && (
-          <div className="z-10 mb-6 max-w-2xl border border-amber-500/40 bg-amber-950/20 px-4 py-3 text-[11px] text-amber-300/90 leading-relaxed">
-            <span className="text-amber-400 font-bold">MOBILE WARNING:</span> iOS and Android browsers cap per-tab memory and have limited WebGPU support. Only the smallest models are offered here. Narrative quality is reduced. For the full experience, open this page on a desktop browser.
-          </div>
-        )}
-        <div className="z-10 grid grid-cols-1 md:grid-cols-2 gap-4 max-w-5xl w-full">
-          {visibleModels.map(model => (
-            <button
-              key={model.id}
-              onClick={() => handleModelSelect(model.id)}
-              className="flex flex-col border border-cyan-500/50 p-6 text-left hover:bg-cyan-900/30 transition-colors group relative"
-            >
-              {model.recommended && (
-                <div className="absolute -top-3 right-4 bg-cyan-600 text-black text-[10px] font-bold px-2 py-0.5 uppercase">
-                  Recommended
-                </div>
-              )}
-              <h3 className="text-xl text-cyan-400 mb-2 tracking-widest uppercase group-hover:text-cyan-300">{model.name}</h3>
-              <p className="text-sm opacity-60 flex-1">{model.description}</p>
-              <div className="mt-4 text-xs font-bold text-cyan-600 uppercase">Load Engine &gt;</div>
-            </button>
-          ))}
-        </div>
-      </div>
-    );
+    return <ModelSelector handleModelSelect={handleModelSelect} />;
   }
 
   if (!isReady) {
@@ -481,32 +348,11 @@ export default function App() {
         </div>
       </div>
 
-      {/* Reset confirmation overlay */}
-      {showResetConfirm && (
-        <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center">
-          <div className="border border-rose-500/40 bg-rose-950/20 p-6 max-w-sm mx-4 text-center">
-            <Skull className="w-8 h-8 text-rose-400 mx-auto mb-4" />
-            <h3 className="text-rose-300 text-sm uppercase tracking-widest mb-2">Confirm System Reset</h3>
-            <p className="text-[10px] opacity-60 mb-6 leading-relaxed">
-              This will erase all terminal logs, reset ship systems to nominal, and re-wake the Caretaker from cryosleep. The story will start over.
-            </p>
-            <div className="flex gap-3 justify-center">
-              <button
-                onClick={() => setShowResetConfirm(false)}
-                className="border border-cyan-500/30 text-cyan-400 px-4 py-2 text-xs uppercase tracking-widest hover:bg-cyan-900/20 transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleReset}
-                className="border border-rose-500/50 text-rose-300 px-4 py-2 text-xs uppercase tracking-widest hover:bg-rose-900/20 transition-colors cursor-pointer"
-              >
-                Execute Reset
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ResetConfirmModal 
+        showResetConfirm={showResetConfirm} 
+        setShowResetConfirm={setShowResetConfirm} 
+        handleReset={handleReset} 
+      />
 
       {/* Main layout */}
       <div className="flex flex-1 overflow-hidden relative">
@@ -519,113 +365,15 @@ export default function App() {
           />
         )}
 
-        {/* Sidebar (static on desktop, slide-out drawer on mobile) */}
-        <aside
-          className={`fixed md:static inset-y-0 left-0 w-72 md:w-64 z-40 border-r border-cyan-900/20 bg-[#050507] md:bg-black/20 p-6 flex flex-col gap-6 overflow-y-auto transition-transform duration-200 ${
-            showSidebar ? 'translate-x-0' : '-translate-x-full'
-          } md:translate-x-0`}
-        >
-          {/* Mobile close button */}
-          <div className="md:hidden flex justify-between items-center -mt-2">
-            <span className="text-[10px] text-cyan-500/60 uppercase tracking-widest font-bold">Ship Status</span>
-            <button
-              onClick={() => setShowSidebar(false)}
-              className="text-cyan-400/70 hover:text-cyan-300 cursor-pointer"
-              aria-label="Close ship status panel"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Ship Vitality */}
-          <section>
-            <h3 className="text-[10px] text-cyan-500/60 uppercase font-bold mb-4 tracking-widest">Ship Vitality</h3>
-            <div className="space-y-4">
-              {shipState ? (
-                <>
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[10px]">
-                      <span>Hull Integrity</span>
-                      <span className="text-cyan-400">{shipState.hull}%</span>
-                    </div>
-                    <div className="h-1.5 w-full bg-cyan-900/20 rounded-full overflow-hidden">
-                      <div className="h-full bg-cyan-500 shadow-[0_0_10px_rgba(6,182,212,0.4)] transition-all duration-500" style={{ width: `${shipState.hull}%` }}></div>
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[10px]">
-                      <span>Reactor Core</span>
-                      <span className="text-amber-400">{shipState.power}%</span>
-                    </div>
-                    <div className="h-1.5 w-full bg-cyan-900/20 rounded-full overflow-hidden">
-                      <div className="h-full bg-amber-500 transition-all duration-500" style={{ width: `${shipState.power}%` }}></div>
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[10px]">
-                      <span>Crew Stress</span>
-                      <span className="text-rose-400">{shipState.stress}</span>
-                    </div>
-                    <div className="h-1.5 w-full bg-cyan-900/20 rounded-full overflow-hidden">
-                      <div className={`h-full transition-all duration-500 ${getStressBarWidth(shipState.stress).color}`}
-                           style={{ width: getStressBarWidth(shipState.stress).width }}></div>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="text-[10px] opacity-50 animate-pulse">SYNCING DATA...</div>
-              )}
-            </div>
-          </section>
-
-          {/* Active Alarms */}
-          {activeAlarms.length > 0 && (
-            <section>
-              <h3 className="text-[10px] text-rose-500/60 uppercase font-bold mb-3 tracking-widest flex items-center gap-1.5">
-                <AlertTriangle className="w-3 h-3" />
-                Active Alarms
-              </h3>
-              <div className="space-y-2">
-                {activeAlarms.map(alarm => (
-                  <div key={alarm.id} className="flex items-start gap-2 text-[10px] text-rose-300/80">
-                    <span className="text-rose-500 mt-0.5 shrink-0">◆</span>
-                    <span className="leading-relaxed">{alarm.text}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Engine Info */}
-          <section className="mt-auto space-y-3">
-            <div className="p-4 border border-cyan-900/40 rounded bg-cyan-950/10">
-              <h4 className="text-[10px] uppercase text-cyan-400 mb-2">Engine Status</h4>
-              <div className="text-[9px] leading-relaxed opacity-60">
-                Ship: GSS Theseus<br/>
-                Year: 2173<br/>
-                Engine: {isCloudMode ? 'Groq Cloud' : '@mlc-ai/web-llm'}<br/>
-                Mode: {isCloudMode ? 'Remote inference' : 'Local / WebGPU'}<br/>
-                Status: <span className="text-emerald-400">Ready</span>
-              </div>
-            </div>
-
-            {/* Account / session controls */}
-            <div className="space-y-2">
-              {user?.email && (
-                <div className="text-[9px] opacity-50 truncate" title={user.email}>
-                  Signed in as {user.email}
-                </div>
-              )}
-              <button
-                onClick={handleSignOut}
-                className="w-full flex items-center justify-center gap-2 border border-cyan-500/30 text-cyan-400/80 hover:text-cyan-300 hover:border-cyan-400/60 px-3 py-2 text-[10px] uppercase tracking-widest transition-colors cursor-pointer"
-              >
-                <LogOut className="w-3 h-3" />
-                Sign Out
-              </button>
-            </div>
-          </section>
-        </aside>
+        <ShipStatusSidebar
+          showSidebar={showSidebar}
+          setShowSidebar={setShowSidebar}
+          shipState={shipState}
+          activeAlarms={activeAlarms}
+          isCloudMode={isCloudMode}
+          user={user}
+          handleSignOut={handleSignOut}
+        />
 
         {/* Terminal area */}
         <main className="flex-1 flex flex-col p-4 md:p-6 bg-[radial-gradient(circle_at_center,_rgba(6,182,212,0.05)_0%,_transparent_70%)] relative">
