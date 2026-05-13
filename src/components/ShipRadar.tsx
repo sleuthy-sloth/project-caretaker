@@ -143,7 +143,7 @@ export function ShipRadar({ shipState }: ShipRadarProps) {
   }, []);
 
   return (
-    <div className="relative w-full aspect-square max-w-sm mx-auto bg-black border border-[#00e61b]/30 rounded overflow-hidden p-4 text-[#00e61b] font-mono select-none border-glow-muted">
+    <div className="relative shrink-0 w-full aspect-square max-w-sm mx-auto bg-black border border-[#00e61b]/30 rounded overflow-hidden p-4 text-[#00e61b] font-mono select-none border-glow-muted">
       {/* Scanline overlay */}
       <div className="absolute inset-0 z-20 pointer-events-none opacity-20" style={{ backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 2px, #00e61b 2px, #00e61b 4px)" }}></div>
       
