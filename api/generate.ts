@@ -127,20 +127,20 @@ export default async function handler(req: Request): Promise<Response> {
     // 429 → fall through to next provider
   }
 
-  // 2. Groq rate-limited (or unconfigured) → try OpenRouter (auto-routes to live free models)
-  const openrouterKey: string | undefined = penv?.OPENROUTER_API_KEY;
-  if (openrouterKey) {
-    const result = await callOpenAICompatible(OPENROUTER_API_URL, openrouterKey, OPENROUTER_MODEL, messages, penaltyParams);
-    if (result.ok) return json({ content: result.content });
-    if (result.status !== 429) return json({ error: result.error }, result.status);
-    // 429 → fall through to Gemini
-  }
-
-  // 3. OpenRouter rate-limited (or unconfigured) → try Google Gemini
+  // 2. Groq rate-limited (or unconfigured) → try Google Gemini
   const geminiKey: string | undefined = penv?.GEMINI_API_KEY;
   if (geminiKey) {
     // Gemini does not accept frequency_penalty / presence_penalty — omit them
     const result = await callOpenAICompatible(GEMINI_API_URL, geminiKey, GEMINI_MODEL, messages);
+    if (result.ok) return json({ content: result.content });
+    if (result.status !== 429) return json({ error: result.error }, result.status);
+    // 429 → fall through to OpenRouter
+  }
+
+  // 3. Gemini rate-limited (or unconfigured) → try OpenRouter (auto-routes to live free models)
+  const openrouterKey: string | undefined = penv?.OPENROUTER_API_KEY;
+  if (openrouterKey) {
+    const result = await callOpenAICompatible(OPENROUTER_API_URL, openrouterKey, OPENROUTER_MODEL, messages, penaltyParams);
     if (result.ok) return json({ content: result.content });
     return json({ error: result.error }, result.status);
   }
