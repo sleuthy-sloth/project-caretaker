@@ -3,7 +3,7 @@ import { Terminal, LogEntry } from './components/Terminal';
 import { useCaretakerAI, AIResponse, ChatHistoryMessage, CLOUD_MODEL_ID } from './hooks/useCaretakerAI';
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut, User } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Skull, AlertTriangle, RotateCcw, Ship, LogOut, PanelLeft, X } from 'lucide-react';
 
 interface ShipState {
@@ -323,12 +323,23 @@ export default function App() {
     }
   };
 
-  // Game reset
+  // Game reset — wipes terminal history, resets ship vitals, lets the
+  // auto-init effect fire the AI's opening sequence once logs hit zero.
   const handleReset = async () => {
     if (!user) return;
     setShowResetConfirm(false);
     try {
-      // Reset ship state
+      // Arm re-initialization before state clears
+      initializationTriggered.current = false;
+      setActiveAlarms([]);
+      setSuggestedActions([]);
+
+      // Delete every terminal history doc from Firestore
+      const logsRef = collection(db, 'ships', user.uid, 'terminalHistory');
+      const snap = await getDocs(logsRef);
+      await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+
+      // Reset ship vitals to starting values
       await setDoc(doc(db, 'ships', user.uid), {
         hull: 100,
         power: 100,
@@ -337,12 +348,6 @@ export default function App() {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
-      // Clear terminal logs (delete all subcollection docs — Firestore limitation)
-      // Instead, delete and recreate the ship doc approach:
-      // For simplicity, just reset via setDoc above — terminalHistory accumulation is fine.
-      pushTerminalLog("--- SYSTEM RESET: CARETAKER MISSION RESTARTED ---", "SYSTEM");
-      pushTerminalLog("All systems re-initialized. Prepare for cryo-revival sequence.", "SYSTEM");
-      initializationTriggered.current = false;
     } catch (err) {
       console.error('Reset failed:', err);
     }
@@ -483,7 +488,7 @@ export default function App() {
             <Skull className="w-8 h-8 text-rose-400 mx-auto mb-4" />
             <h3 className="text-rose-300 text-sm uppercase tracking-widest mb-2">Confirm System Reset</h3>
             <p className="text-[10px] opacity-60 mb-6 leading-relaxed">
-              This will restore all ship systems to nominal and restart the mission. Terminal history will be preserved but marked.
+              This will erase all terminal logs, reset ship systems to nominal, and re-wake the Caretaker from cryosleep. The story will start over.
             </p>
             <div className="flex gap-3 justify-center">
               <button
