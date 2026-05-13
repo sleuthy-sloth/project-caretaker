@@ -45,6 +45,8 @@ async function callOpenAICompatible(
   extraParams: Record<string, unknown> = {}
 ): Promise<APIResult> {
   let res: Response;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout per provider
   try {
     res = await fetch(url, {
       method: "POST",
@@ -60,9 +62,12 @@ async function callOpenAICompatible(
         response_format: { type: "json_object" },
         ...extraParams,
       }),
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
   } catch (err) {
-    return { ok: false, status: 502, error: `Network error: ${String(err)}` };
+    clearTimeout(timeoutId);
+    return { ok: false, status: 502, error: `Network/Timeout error: ${String(err)}` };
   }
 
   const data = await res.json().catch(() => null);

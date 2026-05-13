@@ -3,6 +3,7 @@ import { SYSTEM_ORACLE_PROMPT } from "./systemPrompt";
 import { parseAIResponse } from "./responseParser";
 
 let engine: MLCEngine;
+let activeModelId = "";
 
 // Safari/iOS workers stall when WebLLM tries to write large model shards to
 // IndexedDB — the cache write blocks the fetch pipeline and progress freezes
@@ -81,9 +82,10 @@ self.onmessage = async (event) => {
         ? { ...prebuiltAppConfig, useIndexedDBCache: false }
         : prebuiltAppConfig;
 
-      const chatOpts = {
-        context_window_size: 6144
-      };
+      activeModelId = payload.modelId;
+      const isQwen = activeModelId.includes("Qwen");
+      
+      const chatOpts = isQwen ? { context_window_size: 8192 } : undefined;
 
       await engine.reload(payload.modelId, chatOpts, appConfig);
       clearInterval(stallTimer);
@@ -96,9 +98,10 @@ self.onmessage = async (event) => {
       const rawHistory: Array<{ role: "user" | "assistant"; content: string }> =
         Array.isArray(payload.history) ? payload.history : [];
 
-      // Qwen 2.5 0.5B normally defaults to 4096, but we overridden it to 6144
+      // Qwen 2.5 0.5B normally defaults to 4096, but we overridden it to 8192
       // since the system prompt is ~4000 tokens.
-      const history = trimHistory(rawHistory, payload.prompt, 6144);
+      const ctxSize = activeModelId.includes("Qwen") ? 8192 : 8192;
+      const history = trimHistory(rawHistory, payload.prompt, ctxSize);
 
       const messages = [
         { role: "system", content: SYSTEM_ORACLE_PROMPT },
