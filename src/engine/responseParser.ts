@@ -12,14 +12,14 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function extractFields(raw: string): ParsedAIResponse {
+function extractFields(raw: string, currentStatus?: ParsedAIResponse['ship_status']): ParsedAIResponse {
   // 1. Try to parse numbers/statuses from markdown text
-  const powerMatch = raw.match(/power level.*?\s(\d+)/i) || raw.match(/power_level["\s:]+(\d+)/);
-  const hullMatch = raw.match(/hull integrity.*?\s(\d+)/i) || raw.match(/hull_integrity["\s:]+(\d+)/);
+  const powerMatch = raw.match(/power[_\s]level.*?\s(\d+)/i) || raw.match(/power["\s:]+(\d+)/i) || raw.match(/reactor.*?\s(\d+)/i);
+  const hullMatch = raw.match(/hull[_\s]integrity.*?\s(\d+)/i) || raw.match(/hull["\s:]+(\d+)/i) || raw.match(/integrity.*?\s(\d+)/i);
   
   // Extract stress level
-  const stressRawMatch = raw.match(/stress level.*?\s([a-z]+)/i) || raw.match(/stress_level["\s:]+([a-z]+)/i);
-  let stress_level = "Elevated";
+  const stressRawMatch = raw.match(/stress[_\s]level.*?\s([a-z]+)/i) || raw.match(/stress["\s:]+([a-z]+)/i);
+  let stress_level = currentStatus?.stress_level || "Elevated";
   if (stressRawMatch && stressRawMatch[1]) {
     const rawStress = stressRawMatch[1].toLowerCase();
     if (rawStress.includes("critical")) stress_level = "Critical";
@@ -70,8 +70,8 @@ function extractFields(raw: string): ParsedAIResponse {
     terminal_output: terminal_output.trim() || "SIGNAL CORRUPTED. RETRANSMITTING...",
     scene_description,
     ship_status: {
-      power_level: clamp(Number(powerMatch?.[1]) || 50, 0, 100),
-      hull_integrity: clamp(Number(hullMatch?.[1]) || 50, 0, 100),
+      power_level: clamp(Number(powerMatch?.[1]) || currentStatus?.power_level || 50, 0, 100),
+      hull_integrity: clamp(Number(hullMatch?.[1]) || currentStatus?.hull_integrity || 50, 0, 100),
       stress_level,
     },
     active_alarms,
@@ -79,7 +79,7 @@ function extractFields(raw: string): ParsedAIResponse {
   };
 }
 
-export function parseAIResponse(responseText: string): ParsedAIResponse {
+export function parseAIResponse(responseText: string, currentStatus?: ParsedAIResponse['ship_status']): ParsedAIResponse {
   let parsed: ParsedAIResponse | null = null;
 
   // Try parsing pure JSON first (find bounded json if wrapped in markdown)
@@ -93,7 +93,7 @@ export function parseAIResponse(responseText: string): ParsedAIResponse {
   }
 
   if (!parsed) {
-    parsed = extractFields(responseText);
+    parsed = extractFields(responseText, currentStatus);
   }
 
   if (parsed.ship_status) {

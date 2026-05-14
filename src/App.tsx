@@ -193,7 +193,12 @@ export default function App() {
     // 2. Generate AI response (this legitimately blocks — AI is the bottleneck)
     try {
       const history = buildChatHistory(logs);
-      const aiResponse: AIResponse = await sendMessage(command, history);
+      const currentStatus = shipState ? {
+        power_level: shipState.power,
+        hull_integrity: shipState.hull,
+        stress_level: shipState.stress
+      } : undefined;
+      const aiResponse: AIResponse = await sendMessage(command, history, currentStatus);
 
       // 3. Write AI response + ship update in parallel (fire & forget)
       //    Scene description (if any) is pushed first so it renders above
@@ -234,7 +239,12 @@ export default function App() {
     if (!cmd) return;
     // Use the retry function which increments and sends X-Retry-Attempt header
     const history = buildChatHistory(logs);
-    retry(cmd, history).then(aiResponse => {
+    const currentStatus = shipState ? {
+      power_level: shipState.power,
+      hull_integrity: shipState.hull,
+      stress_level: shipState.stress
+    } : undefined;
+    retry(cmd, history, currentStatus).then(aiResponse => {
       if (aiResponse.scene_description?.trim()) {
         pushTerminalLog(aiResponse.scene_description, "SCENE");
       }

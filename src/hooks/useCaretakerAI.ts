@@ -42,11 +42,15 @@ export function useCaretakerAI() {
     // Cloud-only mode — initialization is automatic, no model selection needed
   }, []);
 
-  const sendMessage = useCallback((prompt: string, history: ChatHistoryMessage[] = []): Promise<AIResponse> => {
+  const sendMessage = useCallback((
+    prompt: string, 
+    history: ChatHistoryMessage[] = [], 
+    currentStatus?: AIResponse['ship_status']
+  ): Promise<AIResponse> => {
     setIsGenerating(true);
     setError(null);
     const attempt = retryCountRef.current;
-    return sendGroqMessage(prompt, history, attempt)
+    return sendGroqMessage(prompt, history, attempt, currentStatus)
       .then(response => {
         setIsGenerating(false);
         // Reset retry count on any successful response (even fallback)
@@ -71,9 +75,13 @@ export function useCaretakerAI() {
       });
   }, []);
 
-  const retry = useCallback((prompt: string, history: ChatHistoryMessage[] = []): Promise<AIResponse> => {
+  const retry = useCallback((
+    prompt: string, 
+    history: ChatHistoryMessage[] = [], 
+    currentStatus?: AIResponse['ship_status']
+  ): Promise<AIResponse> => {
     retryCountRef.current += 1;
-    return sendMessage(prompt, history);
+    return sendMessage(prompt, history, currentStatus);
   }, [sendMessage]);
 
   const resetRetryCount = useCallback(() => {
