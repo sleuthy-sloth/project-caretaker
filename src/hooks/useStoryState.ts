@@ -7,13 +7,14 @@ import {
 } from '../lib/storyState';
 
 export function useStoryState(userId: string | null) {
+  const initialContext = buildStoryStateContext(DEFAULT_STORY_STATE);
   const [storyState, setStoryState] = useState<StoryState>({ ...DEFAULT_STORY_STATE });
-  const [contextString, setContextString] = useState<string>('');
+  const [contextString, setContextString] = useState<string>(initialContext);
 
   useEffect(() => {
     if (!userId) {
       setStoryState({ ...DEFAULT_STORY_STATE });
-      setContextString('');
+      setContextString(initialContext);
       return;
     }
 

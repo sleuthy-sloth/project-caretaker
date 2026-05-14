@@ -282,8 +282,16 @@ export default function App() {
       const aiResponse: AIResponse = await sendMessage(command, history, currentStatus, storyStateContext);
 
       // 3. Apply story state update from AI response
+      //    Auto-advance CP-01 → CP-02 if the AI didn't do it (common on rotation)
       if (aiResponse.story_state_update) {
         applyUpdate(aiResponse.story_state_update);
+      } else if (storyState.activeCheckpoint === 'CP-01' && logs.length > 2) {
+        // Player has exchanged multiple turns but checkpoint never advanced —
+        // auto-advance through the tutorial checkpoint
+        applyUpdate({
+          advance_checkpoint: 'CP-02',
+          set_flags: { arrival_scene_played: true },
+        });
       }
 
       // 4. Write AI response + ship update in parallel (fire & forget)
@@ -333,6 +341,11 @@ export default function App() {
     retry(cmd, history, currentStatus, storyStateContext).then(aiResponse => {
       if (aiResponse.story_state_update) {
         applyUpdate(aiResponse.story_state_update);
+      } else if (storyState.activeCheckpoint === 'CP-01' && logs.length > 2) {
+        applyUpdate({
+          advance_checkpoint: 'CP-02',
+          set_flags: { arrival_scene_played: true },
+        });
       }
       if (aiResponse.scene_description?.trim()) {
         pushTerminalLog(aiResponse.scene_description, "SCENE");

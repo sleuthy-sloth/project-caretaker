@@ -244,9 +244,14 @@ export default async function handler(req: Request): Promise<Response> {
     dynamicSystemPrompt += `\n`;
   }
 
+  // ALWAYS inject the memory directive when history exists — it takes
+  // priority over the checkpoint for the "don't play opening" rule.
   if ((history as Message[]).length > 0) {
-    dynamicSystemPrompt += `\n\n===== MEMORY DIRECTIVE =====\n`;
-    dynamicSystemPrompt += `The Caretaker is ALREADY AWAKE. You are in the middle of an ongoing situation. Do NOT play the "Turn 1 - Arrival" opening sequence. Look at the chat history to infer the current situation and respond accordingly.`;
+    dynamicSystemPrompt += `\n\n===== MEMORY DIRECTIVE (OVERRIDES CHECKPOINT) =====\n`;
+    dynamicSystemPrompt += `The player has already played through the arrival scene. You are in the MIDDLE of the story.\n`;
+    dynamicSystemPrompt += `DO NOT re-describe Cryo Bay 04, DO NOT re-introduce yourself, DO NOT tell the player to step out of the pod.\n`;
+    dynamicSystemPrompt += `Look at the chat history below and continue from the current situation.\n`;
+    dynamicSystemPrompt += `If the Active Checkpoint says CP-01: the checkpoint tracker has not advanced yet, but the player HAS already played through the opening. Treat CP-01 as fully complete and advance to CP-02's content.`;
   }
 
   const messages: Message[] = [
