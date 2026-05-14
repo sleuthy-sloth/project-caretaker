@@ -27,6 +27,13 @@ export function Terminal({ logs, logsLoaded, onCommand, isGenerating, suggestedA
   const [inputValue, setInputValue] = useState("");
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   // Rotate loading messages
   useEffect(() => {
@@ -62,6 +69,10 @@ export function Terminal({ logs, logsLoaded, onCommand, isGenerating, suggestedA
 
     let index = 0;
     const step = () => {
+      if (!mountedRef.current) {
+        pendingAnimations.current.delete(logId);
+        return;
+      }
       // Force-complete if marked
       if (completedIds.current.has(logId)) {
         setDisplayedText(prev => ({ ...prev, [logId]: fullText }));
@@ -146,6 +157,7 @@ export function Terminal({ logs, logsLoaded, onCommand, isGenerating, suggestedA
 
     onCommand(inputValue.trim());
     setInputValue("");
+    requestAnimationFrame(() => inputRef.current?.focus());
   };
 
   const handleQuickAction = (action: string) => {
@@ -243,6 +255,7 @@ export function Terminal({ logs, logsLoaded, onCommand, isGenerating, suggestedA
         <form onSubmit={handleSubmit} className="flex-1 flex">
           <input
             autoFocus
+            ref={inputRef}
             type="text"
             className="bg-transparent border-none outline-none text-white flex-1 placeholder-cyan-900 font-mono uppercase"
             style={{ fontSize: '16px' }}

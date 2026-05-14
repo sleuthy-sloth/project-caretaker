@@ -44,11 +44,6 @@ export async function applyStoryStateUpdate(
   update: StoryStateUpdate
 ): Promise<void> {
   const ref = storyStateRef(userId);
-  const data: Record<string, any> = {
-    turnCount: (await getDoc(ref)).data()?.turnCount ?? 0,
-  };
-
-  // Read current to get base turn count
   const snap = await getDoc(ref);
   const current: StoryState = snap.exists()
     ? (snap.data() as StoryState)

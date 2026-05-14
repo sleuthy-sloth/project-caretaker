@@ -68,10 +68,9 @@ const FALLBACK_NARRATIVES: string[] = [
 // ── Shared Utilities ─────────────────────────────────────────────────────────
 
 function getCorsHeaders(): Record<string, string> {
-  // For Vercel deployments, use the deployment URL. For local dev, allow all.
-  const origin = (process as any).env?.APP_URL || (process as any).env?.VERCEL_URL 
-    ? `https://${(process as any).env.VERCEL_URL || ''}` 
-    : '*';
+  const env = (process as any).env;
+  const origin = env?.APP_URL
+    || (env?.VERCEL_URL ? `https://${env.VERCEL_URL}` : '*');
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -100,9 +99,11 @@ function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+let fallbackIndex = 0;
 function getFallbackNarrative(): string {
-  const index = Math.floor(Math.random() * FALLBACK_NARRATIVES.length);
-  return FALLBACK_NARRATIVES[index];
+  const narrative = FALLBACK_NARRATIVES[fallbackIndex % FALLBACK_NARRATIVES.length];
+  fallbackIndex++;
+  return narrative;
 }
 
 // ── Provider API Call ────────────────────────────────────────────────────────
