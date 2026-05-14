@@ -46,6 +46,7 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [isAnonymous, setIsAnonymous] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
 
   const initializationTriggered = useRef(false);
   const lastCommandRef = useRef<string>("");
@@ -58,14 +59,29 @@ export default function App() {
 
   const { storyState, storyStateContext, applyUpdate } = useStoryState(user?.uid ?? null);
 
-  // Auth Effect
+  // Auth Effect — with 10s timeout to fall through to login if Firebase hangs
   useEffect(() => {
+    const timeout = setTimeout(() => setAuthInitialized(true), 10_000);
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      clearTimeout(timeout);
       setUser(currentUser);
       setIsAnonymous(currentUser?.isAnonymous ?? false);
       setAuthInitialized(true);
     });
-    return () => unsubscribe();
+    return () => { clearTimeout(timeout); unsubscribe(); };
+  }, []);
+
+  // Network connectivity — drives the Sync indicator; Firebase persistence
+  // handles queuing writes automatically when offline
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   // Firestore offline persistence
@@ -484,7 +500,9 @@ export default function App() {
           </div>
           <div className="flex flex-col items-end">
             <span className="opacity-40 text-xs">Sync</span>
-            <span className="text-amber-400">Online</span>
+            <span className={isOnline ? "text-amber-400" : "text-rose-400"}>
+              {isOnline ? "Online" : "Offline"}
+            </span>
           </div>
           <button
             onClick={() => setShowMap(true)}
@@ -570,8 +588,8 @@ export default function App() {
       {/* Status bar */}
       <div className="h-8 border-t border-cyan-900/30 flex items-center px-4 md:px-6 text-[9px] uppercase tracking-widest bg-black shrink-0">
         <div className="flex items-center gap-2">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-          <span>Online</span>
+          <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? "bg-emerald-500" : "bg-rose-500 animate-pulse"}`}></div>
+          <span>{isOnline ? "Online" : "Offline — writes queued"}</span>
         </div>
         <div className="mx-3 h-3 w-px bg-cyan-900/40 hidden sm:block"></div>
         <div className="flex-1 hidden sm:flex gap-4">
