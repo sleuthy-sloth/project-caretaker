@@ -68,7 +68,7 @@ describe("delay", () => {
   });
 });
 
-describe("callOpenAICompatible retry behavior", () => {
+describe("callOpenAICompatible (no internal retry — rotation handles retries)", () => {
   const TEST_URL = "https://api.example.com/v1/chat/completions";
   const TEST_KEY = "test-api-key";
   const TEST_MODEL = "test-model";
@@ -87,45 +87,12 @@ describe("callOpenAICompatible retry behavior", () => {
     mock.restore();
   });
 
-  it("retries once on 504 (gateway timeout)", async () => {
-    let callCount = 0;
-    global.fetch = mock(() => {
-      callCount++;
-      if (callCount === 1) {
-        return Promise.resolve(
-          new Response(JSON.stringify({ error: "upstream timeout" }), {
-            status: 504,
-            headers: { "Content-Type": "application/json" },
-          })
-        );
-      }
-      return Promise.resolve(
-        new Response(
-          JSON.stringify({
-            choices: [{ message: { content: '{"ok": true}' } }],
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } }
-        )
-      );
-    });
-
-    const result = await callOpenAICompatible(
-      TEST_URL,
-      TEST_KEY,
-      TEST_MODEL,
-      TEST_MESSAGES
-    );
-
-    expect(callCount).toBe(2);
-    expect(result.ok).toBe(true);
-  });
-
-  it("returns final error after retry exhausts on persistent 504", async () => {
+  it("does NOT retry on 504 — rotation handles retries", async () => {
     let callCount = 0;
     global.fetch = mock(() => {
       callCount++;
       return Promise.resolve(
-        new Response(JSON.stringify({ error: "still timing out" }), {
+        new Response(JSON.stringify({ error: "upstream timeout" }), {
           status: 504,
           headers: { "Content-Type": "application/json" },
         })
@@ -139,7 +106,7 @@ describe("callOpenAICompatible retry behavior", () => {
       TEST_MESSAGES
     );
 
-    expect(callCount).toBe(2); // original + 1 retry
+    expect(callCount).toBe(1); // no internal retry
     expect(result.ok).toBe(false);
     expect(result.status).toBe(504);
   });
@@ -211,7 +178,7 @@ describe("callOpenAICompatible retry behavior", () => {
   });
 });
 
-describe("handler structured error responses", () => {
+describe("handler fallback narrative responses", () => {
   let handler: any;
 
   beforeEach(async () => {
@@ -240,8 +207,8 @@ describe("handler structured error responses", () => {
     expect(data.error).toBeTruthy();
   });
 
-  it("returns structured error when Groq is forced and fails with 504", async () => {
-    // Mock environment and fetch so Groq path is taken
+  it("returns fallback narrative when all providers fail", async () => {
+    // Mock environment with Groq key but all requests fail
     const origEnv = process.env;
     process.env = { ...origEnv, GROQ_API_KEY: "test-key" };
 
@@ -257,31 +224,31 @@ describe("handler structured error responses", () => {
     const req = mockRequest({
       prompt: "hello",
       history: [],
-      cloudModel: "cloud-groq",
     });
     const res = await handler(req);
     process.env = origEnv;
     const data = await res.json();
 
-    expect(data).toHaveProperty("provider", "groq");
-    expect(data).toHaveProperty("retryable", true);
-    expect(data).toHaveProperty("suggestion");
-    expect(data).toHaveProperty("error");
+    expect(res.status).toBe(200);
+    expect(data).toHaveProperty("content");
+    expect(data).toHaveProperty("fallback", true);
+    expect(data).toHaveProperty("retryAfter", 5);
+    // Content should be valid JSON (a fallback narrative)
+    expect(() => JSON.parse(data.content)).not.toThrow();
   });
 
-  it("returns structured error when all providers are unavailable", async () => {
+  it("returns fallback narrative when no API keys configured", async () => {
     const req = mockRequest({
       prompt: "hello",
       history: [],
-      cloudModel: "cloud-groq",
     });
-    // No API key set — handler should reach catch-all
+    // No API key set — handler returns fallback immediately
     const res = await handler(req);
     const data = await res.json();
 
-    expect(data).toHaveProperty("provider", null);
-    expect(data).toHaveProperty("retryable", false);
-    expect(data).toHaveProperty("suggestion");
-    expect(data.error).toContain("API");
+    expect(res.status).toBe(200);
+    expect(data).toHaveProperty("content");
+    expect(data).toHaveProperty("fallback", true);
+    expect(data).toHaveProperty("retryAfter", 5);
   });
 });

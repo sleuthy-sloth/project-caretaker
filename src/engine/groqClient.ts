@@ -4,12 +4,16 @@ import { parseAIResponse, type ParsedAIResponse } from "./responseParser";
 export async function sendGroqMessage(
   prompt: string,
   history: ChatHistoryMessage[],
-  cloudModel: string,
+  retryAttempt: number = 0,
 ): Promise<ParsedAIResponse> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (retryAttempt > 0) {
+    headers["X-Retry-Attempt"] = String(retryAttempt);
+  }
   const response = await fetch("/api/generate", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, history, cloudModel }),
+    headers,
+    body: JSON.stringify({ prompt, history }),
   });
 
   if (!response.ok) {

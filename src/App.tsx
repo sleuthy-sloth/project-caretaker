@@ -7,12 +7,10 @@ import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, 
 import { Skull, AlertTriangle, RotateCcw, Ship, LogOut, PanelLeft, X, Map as MapIcon } from 'lucide-react';
 
 import { SystemLockScreen } from './components/SystemLockScreen';
-import { ModelSelector } from './components/ModelSelector';
 import { ShipStatusSidebar } from './components/ShipStatusSidebar';
 import { ResetConfirmModal } from './components/ResetConfirmModal';
 import { ShipMap } from './components/ShipMap';
 import { ShipState, ActiveAlarm, normalizeStress } from './lib/types';
-import { AVAILABLE_MODELS } from './lib/models';
 
 const MAX_HISTORY_MESSAGES = 8;
 
@@ -45,11 +43,10 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
 
-  const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const initializationTriggered = useRef(false);
   const lastCommandRef = useRef<string>("");
 
-  const { isInitializing, downloadProgress, progressText, isGenerating, isReady, isCloudMode, error, initAI, sendMessage, generationElapsed } = useCaretakerAI();
+  const { isInitializing, downloadProgress, progressText, isGenerating, isReady, isCloudMode, error, initAI, sendMessage, retry, generationElapsed } = useCaretakerAI();
 
   // Auth Effect
   useEffect(() => {
@@ -105,11 +102,6 @@ export default function App() {
       console.error('Redirect sign-in error:', err);
     });
   }, []);
-
-  const handleModelSelect = (modelId: string) => {
-    setSelectedModel(modelId);
-    initAI(modelId);
-  };
 
   // Firestore ship state listener
   useEffect(() => {
@@ -234,28 +226,47 @@ export default function App() {
   };
 
   const handleRetry = useCallback(() => {
-    if (lastCommandRef.current) {
-      handleCommand(lastCommandRef.current);
-    }
-  }, [handleCommand]);
-
-  const handleSwitchToAuto = useCallback(() => {
-    setSelectedModel("cloud-auto");
-    initAI("cloud-auto");
-  }, [initAI]);
+    const cmd = lastCommandRef.current;
+    if (!cmd) return;
+    // Use the retry function which increments and sends X-Retry-Attempt header
+    const history = buildChatHistory(logs);
+    retry(cmd, history).then(aiResponse => {
+      if (aiResponse.scene_description?.trim()) {
+        pushTerminalLog(aiResponse.scene_description, "SCENE");
+      }
+      pushTerminalLog(aiResponse.terminal_output, "AI");
+      setActiveAlarms(
+        (aiResponse.active_alarms || []).map((text, i) => ({
+          id: `alarm-${Date.now()}-${i}`,
+          text,
+        }))
+      );
+      setSuggestedActions(aiResponse.suggested_actions || []);
+      if (aiResponse.ship_status) {
+        updateDoc(doc(db, 'ships', user.uid), {
+          hull: aiResponse.ship_status.hull_integrity,
+          power: aiResponse.ship_status.power_level,
+          stress: aiResponse.ship_status.stress_level,
+          updatedAt: serverTimestamp()
+        }).catch(err => console.error('Failed to update ship state:', err));
+      }
+    }).catch(err => {
+      console.error(err);
+      pushTerminalLog("ERROR: AEGIS CORE UNRESPONSIVE.", "SYSTEM");
+    });
+  }, [logs, retry, user]);
 
   // Auto-send system init once ready
   useEffect(() => {
-    if (isReady && logsLoaded && logs.length === 0 && selectedModel && !initializationTriggered.current) {
+    if (isReady && logsLoaded && logs.length === 0 && !initializationTriggered.current) {
       initializationTriggered.current = true;
       handleCommand("[SYSTEM INITIALIZATION] Waking Caretaker from Pod 04. Boot sequence complete. Provide immediate sitrep to Caretaker terminal.", true);
     }
-  }, [isReady, logsLoaded, logs.length, selectedModel]);
+  }, [isReady, logsLoaded, logs.length]);
 
   const handleSignOut = async () => {
     try {
       await signOut(auth);
-      setSelectedModel(null);
       setShipState(null);
       setLogs([]);
       setLogsLoaded(false);
@@ -307,25 +318,6 @@ export default function App() {
     return <SystemLockScreen authError={authError} authLoading={authLoading} handleLogin={handleLogin} />;
   }
 
-  if (!selectedModel) {
-    return <ModelSelector handleModelSelect={handleModelSelect} />;
-  }
-
-  if (!isReady) {
-    return (
-      <div className="h-dvh w-full bg-[#050507] text-[#a0aec0] flex flex-col items-center justify-center font-mono relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-[0.03]" style={{ backgroundImage: "repeating-linear-gradient(0deg, #fff, #fff 1px, transparent 1px, transparent 2px)" }}></div>
-        <div className="z-10 text-center mb-4 text-cyan-500/40 text-xs tracking-widest uppercase animate-pulse">
-           [ INITIALIZING ORACLE ENGINE ]
-        </div>
-        <div className="z-10 w-64 h-2 bg-cyan-900/30 overflow-hidden mb-2">
-          <div className="h-full bg-cyan-500 transition-all duration-300" style={{ width: `${downloadProgress * 100}%` }}></div>
-        </div>
-        <div className="z-10 text-[10px] text-cyan-600 uppercase tracking-widest">{progressText || 'Loading...'}</div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col h-dvh w-full overflow-hidden font-mono text-[#a0aec0] bg-[#050507]">
       {/* Header */}
@@ -345,25 +337,9 @@ export default function App() {
         </div>
         <div className="flex items-center gap-4 md:gap-8 text-[10px] uppercase tracking-tighter">
           <div className="hidden sm:flex flex-col">
-            <span className="opacity-40 text-xs">{isCloudMode ? "Engine" : "WebGPU"}</span>
-            <span className={isCloudMode ? "text-violet-400" : "text-emerald-400"}>
-              {isCloudMode ? "Cloud AI" : "Active"}
-            </span>
+            <span className="opacity-40 text-xs">Engine</span>
+            <span className="text-violet-400">Cloud AI</span>
           </div>
-          <div className="hidden md:flex flex-col">
-            <span className="opacity-40 text-xs">Model</span>
-            <span className="text-cyan-400">{AVAILABLE_MODELS.find(m => m.id === selectedModel)?.name || selectedModel}</span>
-          </div>
-          <button
-            onClick={() => {
-              setSelectedModel(null);
-              initializationTriggered.current = false;
-            }}
-            className="hidden sm:flex items-center gap-1 border border-cyan-500/30 text-cyan-400/80 hover:text-cyan-300 hover:border-cyan-400/60 px-2 py-1 transition-colors cursor-pointer"
-            title="Switch model"
-          >
-            Switch Model
-          </button>
           <div className="flex flex-col items-end">
             <span className="opacity-40 text-xs">Sync</span>
             <span className="text-amber-400">Online</span>
@@ -440,15 +416,6 @@ export default function App() {
                 >
                   Retry
                 </button>
-                {!error.toLowerCase().includes("configure") && (
-                  <button
-                    onClick={handleSwitchToAuto}
-                    disabled={isGenerating}
-                    className="border border-violet-400/50 hover:bg-violet-500/20 px-2 py-0.5 rounded transition-colors text-violet-300 disabled:opacity-30 cursor-pointer"
-                  >
-                    Switch to Auto
-                  </button>
-                )}
               </div>
             </div>
           )}

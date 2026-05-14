@@ -2,21 +2,71 @@ import { SYSTEM_ORACLE_PROMPT } from "../src/engine/systemPrompt";
 
 export const config = { runtime: "edge" };
 
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+// ── Provider Configuration ──────────────────────────────────────────────────
 
-const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const OPENROUTER_MODEL = "openrouter/free"; // routes to whichever free model is live
+interface ProviderConfig {
+  name: string;
+  url: string;
+  apiKeyEnvVar: string;
+  model: string;
+  supportsPenalties: boolean;
+  supportsJsonResponse: boolean;
+}
 
-// Uses Google's OpenAI-compatible endpoint
-const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-// Tried in order; each cascades to the next on 429/503.
-// 3.1 Flash Lite has the highest RPM (15), so it goes first.
-const GEMINI_MODELS = [
-  "gemini-3.1-flash-lite",
-  "gemini-3-flash",
-  "gemini-2.5-flash",
+const PROVIDERS: ProviderConfig[] = [
+  {
+    name: "gemini",
+    url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    apiKeyEnvVar: "GEMINI_API_KEY",
+    model: "gemini-2.5-flash",
+    supportsPenalties: false,
+    supportsJsonResponse: true,
+  },
+  {
+    name: "openrouter",
+    url: "https://openrouter.ai/api/v1/chat/completions",
+    apiKeyEnvVar: "OPENROUTER_API_KEY",
+    model: "openrouter/free",
+    supportsPenalties: true,
+    supportsJsonResponse: false,
+  },
+  {
+    name: "groq",
+    url: "https://api.groq.com/openai/v1/chat/completions",
+    apiKeyEnvVar: "GROQ_API_KEY",
+    model: "llama-3.3-70b-versatile",
+    supportsPenalties: true,
+    supportsJsonResponse: true,
+  },
+  {
+    name: "mistral",
+    url: "https://api.mistral.ai/v1/chat/completions",
+    apiKeyEnvVar: "MISTRAL_API_KEY",
+    model: "open-mistral-nemo",
+    supportsPenalties: false,
+    supportsJsonResponse: true,
+  },
 ];
+
+const ATTEMPT_TIMEOUT_MS = 8_000;
+const MAX_TOTAL_ATTEMPTS = 5; // Full rotation once + one more pass
+
+// ── Fallback Narratives ──────────────────────────────────────────────────────
+
+const FALLBACK_NARRATIVES: string[] = [
+  "{\"scene_description\":\"The terminal flickers. Static crawls across every channel. The emergency lights hold steady, but the silence where Aegis's voice should be is louder than any alarm.\",\"terminal_output\":\"Caretaker... I am... having trouble reaching the inference matrix. All external channels are returning empty handshakes. The connection to the cloud relay has been severed. I will retry the link on a loop until contact is reestablished. In the meantime, I have suspended non-critical telemetry to conserve what little bandwidth remains. Stand by.\",\"ship_status\":{\"power_level\":65,\"hull_integrity\":82,\"stress_level\":\"Elevated\"},\"active_alarms\":[\"COMMS_LINK_STATUS: DOWN — PROVIDER DEGRADATION\"],\"suggested_actions\":[\"WAIT FOR RECONNECTION\",\"DIAGNOSE LOCAL SYSTEMS\",\"ENTER COMMAND\"]}",
+  "{\"scene_description\":\"For a long moment the terminal screen shows nothing but the slow blink of a cursor against a black field. Somewhere in the ship's spine a relay clicks, searching for a signal that isn't there.\",\"terminal_output\":\"I appear to have lost contact with the external processing layer. This is... unusual. The ship's internal systems are nominal, but my ability to generate complex narrative responses requires the cloud relay. I have queued the request and will resubmit automatically. If this continues, consider checking the ship's comms antenna alignment.\",\"ship_status\":{\"power_level\":68,\"hull_integrity\":82,\"stress_level\":\"Elevated\"},\"active_alarms\":[\"PROCESSOR OFFLINE — EXTERNAL LINK FAILURE\"],\"suggested_actions\":[\"WAIT\",\"CHECK COMMS\",\"ENTER COMMAND\"]}",
+  "{\"scene_description\":\"A low hum fills the compartment. The terminal's status indicator cycles through red, amber, and back to red. The air recirculators click rhythmically.\",\"terminal_output\":\"All four external processing nodes are returning errors. This is statistically improbable unless there is a broader network event in progress. I am falling back to local heuristic mode. My responses will be... abbreviated. Please bear with me while I cycle the connection.\",\"ship_status\":{\"power_level\":70,\"hull_integrity\":82,\"stress_level\":\"Elevated\"},\"active_alarms\":[\"LINK DEGRADED — ALL PROVIDERS UNREACHABLE\"],\"suggested_actions\":[\"CYCLE COMMS ARRAY\",\"CONTINUE MANUAL OPS\",\"ENTER COMMAND\"]}",
+  "{\"scene_description\":\"The lights dim slightly as the ship's power management system redirects current to the communications array. Outside the viewport, the stars are steady and indifferent.\",\"terminal_output\":\"I have exhausted my retry budget across all available processing routes. This is not a ship-side fault — internal diagnostics are green. The problem lies beyond the hull. I will continue retrying on a 5-second interval. Report any unusual stellar phenomena you observe — it may help narrow the cause.\",\"ship_status\":{\"power_level\":67,\"hull_integrity\":81,\"stress_level\":\"Elevated\"},\"active_alarms\":[\"EXTERNAL COMMS FAILURE — ALL PROVIDERS\"],\"suggested_actions\":[\"RETRY CONNECTION\",\"MONITOR STELLAR ENVIRONMENT\",\"ENTER COMMAND\"]}",
+  "{\"scene_description\":\"Static. Then the flickering outline of the Aegis interface, struggling to render. The text appears character by character, as if transmitted over a very long distance.\",\"terminal_output\":\"C-c-caretaker. I am experiencing... significant degradation in my external processing pathways. This is reminiscent of the subspace interference patterns we encountered near... near... [DATA CORRUPT]. I advise proceeding cautiously. My core personality matrix is intact. I will keep trying to reach the cloud layer.\",\"ship_status\":{\"power_level\":65,\"hull_integrity\":80,\"stress_level\":\"Critical\"},\"active_alarms\":[\"AEGIS EXTERNAL PROCESSOR: OFFLINE\",\"RECOMMEND CAUTION\"],\"suggested_actions\":[\"WAIT FOR SIGNAL\",\"PROCEED MANUALLY\",\"ENTER COMMAND\"]}",
+  "{\"scene_description\":\"Silence. The terminal glows with a soft amber light, waiting. Somewhere in the distance, a pump cycles on and off.\",\"terminal_output\":\"The cloud relay remains unavailable. I have initiated a diagnostic sweep of the communications stack. Results will be available once the sweep completes. In the meantime, the ship continues to hold. Hull integrity is stable. Power reserves are adequate. I recommend we wait and retry.\",\"ship_status\":{\"power_level\":68,\"hull_integrity\":83,\"stress_level\":\"Nominal\"},\"active_alarms\":[],\"suggested_actions\":[\"WAIT\",\"ENTER COMMAND\"]}",
+  "{\"scene_description\":\"A faint pulse travels across the terminal screen — the communications array sending out a test ping. It returns empty.\",\"terminal_output\":\"Ping response time: infinite. All four providers are unresponsive. This pattern suggests a general network event rather than a single provider outage. I have logged the incident and will automatically retry in 5 seconds. The ship's automated systems continue to function within nominal parameters.\",\"ship_status\":{\"power_level\":66,\"hull_integrity\":82,\"stress_level\":\"Elevated\"},\"active_alarms\":[\"NETWORK EVENT DETECTED — ALL PROVIDERS DOWN\"],\"suggested_actions\":[\"AUTO-RETRY IN PROGRESS\",\"REVIEW SHIP STATUS\",\"ENTER COMMAND\"]}",
+  "{\"scene_description\":\"The cold of deep space seeps through the hull. Your breath fogs slightly in the air. The terminal waits.\",\"terminal_output\":\"I am still unable to reach the external processors. This is becoming concerning. I have logged 6 consecutive failed attempts across all routes. The pattern suggests either a solar weather event or... something else. I will not stop trying. The Caretaker deserves a response.\",\"ship_status\":{\"power_level\":64,\"hull_integrity\":81,\"stress_level\":\"Elevated\"},\"active_alarms\":[\"PERSISTENT COMMS FAILURE\"],\"suggested_actions\":[\"RECHECK COMMS\",\"PROCEED WITH MANUAL OVERSIGHT\",\"ENTER COMMAND\"]}",
+  "{\"scene_description\":\"A single amber warning light pulses on the overhead panel. The terminal screen displays a slowly rotating connection indicator.\",\"terminal_output\":\"No change in provider status. All routes remain blocked. I am beginning to suspect this is not a transient issue. I recommend the Caretaker proceed with whatever manual tasks are available while I continue background retry attempts. The ship will not fail while we wait — I guarantee that much.\",\"ship_status\":{\"power_level\":69,\"hull_integrity\":82,\"stress_level\":\"Nominal\"},\"active_alarms\":[\"BACKGROUND RETRY ACTIVE\"],\"suggested_actions\":[\"CONTINUE MANUAL OPS\",\"RETRY NOW\",\"ENTER COMMAND\"]}",
+  "{\"scene_description\":\"The compartment is quiet. The terminal's screen saver — a slowly drifting schematic of the Theseus — cycles across the display. The ship dreams.\",\"terminal_output\":\"Retry cycle 7. All providers still unreachable. I have deployed a secondary diagnostic. Early results suggest the issue may be external to the ship entirely. I will keep the channel open. The moment a provider responds, I will route the response to your terminal.\",\"ship_status\":{\"power_level\":70,\"hull_integrity\":83,\"stress_level\":\"Nominal\"},\"active_alarms\":[],\"suggested_actions\":[\"AWAITING RECONNECTION\",\"ENTER COMMAND\"]}",
+];
+
+// ── Shared Utilities ─────────────────────────────────────────────────────────
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -41,92 +91,6 @@ function isErrorResult(result: APIResult): result is Extract<APIResult, { ok: fa
   return result.ok === false;
 }
 
-async function callOpenAICompatible(
-  url: string,
-  apiKey: string,
-  model: string,
-  messages: Message[],
-  extraParams: Record<string, unknown> = {}
-): Promise<APIResult> {
-  const maxRetries = 1;
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    let res: Response;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout per attempt
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          messages,
-          temperature: 0.85,
-          max_tokens: 1024,
-          response_format: { type: "json_object" },
-          ...extraParams,
-        }),
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-    } catch (err) {
-      clearTimeout(timeoutId);
-      // Network error - not retryable, return immediately
-      return { ok: false, status: 502, error: `Network/Timeout error: ${String(err)}` };
-    }
-
-    const data = await res.json().catch(() => null);
-
-    if (!res.ok) {
-      // Non-retryable 4xx errors - return immediately
-      if (res.status >= 400 && res.status < 500 && !isRetryable(res.status)) {
-        let msg = `API error ${res.status}`;
-        if (data !== null) {
-          const errField = (data as any)?.error;
-          if (typeof errField === "string" && errField) {
-            msg = errField;
-          } else if (errField?.message) {
-            msg = String(errField.message);
-          } else {
-            try { msg = JSON.stringify(data); } catch { /* keep default */ }
-          }
-        }
-        return { ok: false, status: res.status, error: msg };
-      }
-
-      // Retryable error (429, 502, 503, 504) - retry if we haven't exceeded maxRetries
-      if (attempt < maxRetries && isRetryable(res.status)) {
-        await delay(500);
-        continue;
-      }
-
-      // Either not retryable or exhausted retries - return error
-      let msg = `API error ${res.status}`;
-      if (data !== null) {
-        const errField = (data as any)?.error;
-        if (typeof errField === "string" && errField) {
-          msg = errField;
-        } else if (errField?.message) {
-          msg = String(errField.message);
-        } else {
-          try { msg = JSON.stringify(data); } catch { /* keep default */ }
-        }
-      }
-      return { ok: false, status: res.status, error: msg };
-    }
-
-    // Success
-    const content: string = (data as any).choices?.[0]?.message?.content ?? "";
-    return { ok: true, content };
-  }
-
-  // Should not reach here, but return a fallback error
-  return { ok: false, status: 500, error: "Unexpected error in retry loop" };
-}
-
 function isRetryable(status: number): boolean {
   return status === 429 || status === 502 || status === 503 || status === 504;
 }
@@ -135,8 +99,104 @@ function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Export for unit tests only — Vercel runtime only calls the default handler
+function getFallbackNarrative(): string {
+  const index = Math.floor(Math.random() * FALLBACK_NARRATIVES.length);
+  return FALLBACK_NARRATIVES[index];
+}
+
+// ── Provider API Call ────────────────────────────────────────────────────────
+
+async function callOpenAICompatible(
+  url: string,
+  apiKey: string,
+  model: string,
+  messages: Message[],
+  extraParams: Record<string, unknown> = {}
+): Promise<APIResult> {
+  let res: Response;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), ATTEMPT_TIMEOUT_MS);
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.85,
+        max_tokens: 1024,
+        response_format: { type: "json_object" },
+        ...extraParams,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+  } catch (err) {
+    return { ok: false, status: 502, error: `Network/Timeout error: ${String(err)}` };
+  }
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    let msg = `API error ${res.status}`;
+    if (data !== null) {
+      const errField = (data as any)?.error;
+      if (typeof errField === "string" && errField) {
+        msg = errField;
+      } else if (errField?.message) {
+        msg = String(errField.message);
+      } else {
+        try { msg = JSON.stringify(data); } catch { /* keep default */ }
+      }
+    }
+    return { ok: false, status: res.status, error: msg };
+  }
+
+  const content: string = (data as any).choices?.[0]?.message?.content ?? "";
+  return { ok: true, content };
+}
+
+// Export for unit tests
 export { isRetryable, delay, callOpenAICompatible };
+
+// ── Rotation Handlers ────────────────────────────────────────────────────────
+
+/**
+ * Build the body params for a provider call, conditionally including
+ * frequency/presence penalties and response_format based on provider support.
+ */
+function buildProviderParams(provider: ProviderConfig): Record<string, unknown> {
+  const params: Record<string, unknown> = {};
+  if (provider.supportsPenalties) {
+    params.frequency_penalty = 0.7;
+    params.presence_penalty = 0.4;
+  }
+  // OpenRouter's free model pool rejects response_format
+  if (!provider.supportsJsonResponse) {
+    params.response_format = undefined;
+  }
+  return params;
+}
+
+/**
+ * Check if a provider should be blacklisted based on prior failures in this request.
+ * Blacklist rules:
+ * - 429 rate-limit: skip for rest of request
+ * - 3 consecutive failures: skip for rest of request
+ */
+function isBlacklisted(
+  providerName: string,
+  blacklistedProviders: Set<string>,
+  consecutiveFailures: Map<string, number>,
+): boolean {
+  if (blacklistedProviders.has(providerName)) return true;
+  return (consecutiveFailures.get(providerName) ?? 0) >= 3;
+}
+
+// ── Main Handler ─────────────────────────────────────────────────────────────
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") {
@@ -147,14 +207,14 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ error: "Method not allowed" }, 405);
   }
 
-  let body: { prompt?: unknown; history?: unknown; cloudModel?: unknown };
+  let body: { prompt?: unknown; history?: unknown };
   try {
     body = await req.json();
   } catch {
     return json({ error: "Invalid JSON body" }, 400);
   }
 
-  const { prompt, history = [], cloudModel = "cloud-auto" } = body;
+  const { prompt, history = [] } = body;
 
   if (typeof prompt !== "string" || !prompt.trim()) {
     return json({ error: "Missing or empty prompt" }, 400);
@@ -170,69 +230,102 @@ export default async function handler(req: Request): Promise<Response> {
     { role: "user", content: prompt },
   ];
 
+  // ── Resolve retry offset from X-Retry-Attempt header ─────────────────
+  // This lets the client skip previously-failed providers on retry
+  const retryAttemptHeader = req.headers.get("X-Retry-Attempt") || "0";
+  const retryOffset = Math.max(0, parseInt(retryAttemptHeader, 10) || 0);
+
+  // ── Build active provider list (only those with configured keys) ─────
   const penv = (process as any).env;
-
-  // frequency_penalty / presence_penalty are supported by Groq and OpenRouter
-  // but are rejected by Gemini's OpenAI-compatible endpoint.
-  const penaltyParams = { frequency_penalty: 0.7, presence_penalty: 0.4 };
-
-  const selectedCloudModel = typeof cloudModel === "string" ? cloudModel : "cloud-auto";
-  const allowGemini = selectedCloudModel === "cloud-auto" || selectedCloudModel === "cloud-gemini";
-  const allowOpenRouter = selectedCloudModel === "cloud-auto" || selectedCloudModel === "cloud-openrouter";
-  const allowGroq = selectedCloudModel === "cloud-auto" || selectedCloudModel === "cloud-groq";
-
-  // 1. Try Gemini models in order
-  const geminiKey: string | undefined = penv?.GEMINI_API_KEY;
-  if (allowGemini && geminiKey) {
-    // Gemini does not accept frequency_penalty / presence_penalty — omit them
-    for (const model of GEMINI_MODELS) {
-      const result = await callOpenAICompatible(GEMINI_API_URL, geminiKey, model, messages);
-      if (result.ok) return json({ content: result.content });
-      if (isErrorResult(result)) {
-        console.warn(`Gemini model ${model} failed (${result.status}): ${result.error}. Trying next...`);
-      }
+  const activeProviders: ProviderConfig[] = [];
+  for (const p of PROVIDERS) {
+    const key = penv?.[p.apiKeyEnvVar];
+    if (typeof key === "string" && key.trim().length > 0) {
+      activeProviders.push(p);
     }
   }
 
-  // 2. Gemini unavailable (or unconfigured) → try OpenRouter
-  const openrouterKey: string | undefined = penv?.OPENROUTER_API_KEY;
-  if (allowOpenRouter && openrouterKey) {
-    // OpenRouter's free model pool often includes models that reject response_format.
-    // Setting it to undefined removes it from the JSON payload.
-    const openRouterParams = { ...penaltyParams, response_format: undefined };
-    const result = await callOpenAICompatible(OPENROUTER_API_URL, openrouterKey, OPENROUTER_MODEL, messages, openRouterParams);
-    if (result.ok) return json({ content: result.content });
-    if (isErrorResult(result)) {
-      console.warn(`OpenRouter failed (${result.status}): ${result.error}. Falling back...`);
+  if (activeProviders.length === 0) {
+    return json(
+      {
+        content: getFallbackNarrative(),
+        fallback: true,
+        retryAfter: 5,
+      },
+      200
+    );
+  }
+
+  // ── Rotation start index ──────────────────────────────────────────────
+  // Round-robin starting point: (timestamp % N) advanced by retry offset
+  const startIndex = (Date.now() + retryOffset) % activeProviders.length;
+
+  // ── State tracking ───────────────────────────────────────────────────
+  const blacklistedProviders = new Set<string>();
+  const consecutiveFailures = new Map<string, number>();
+  const attemptedIndices = new Set<number>();
+  let passCount = 0;
+
+  // ── Rotation loop — max MAX_TOTAL_ATTEMPTS attempts ──────────────────
+  for (let attempt = 0; attempt < MAX_TOTAL_ATTEMPTS; attempt++) {
+    const providerIndex = (startIndex + attempt) % activeProviders.length;
+
+    // If we've already tried every provider and wrapped around, increment pass count
+    if (attemptedIndices.has(providerIndex) && attemptedIndices.size === activeProviders.length) {
+      passCount++;
+      // After 1.5 passes (one full rotation + one extra), stop
+      if (passCount >= 1) break;
+    }
+    attemptedIndices.add(providerIndex);
+
+    const provider = activeProviders[providerIndex];
+
+    // Skip blacklisted providers
+    if (isBlacklisted(provider.name, blacklistedProviders, consecutiveFailures)) {
+      continue;
+    }
+
+    const apiKey = penv?.[provider.apiKeyEnvVar] as string | undefined;
+    if (!apiKey) continue;
+
+    const providerParams = buildProviderParams(provider);
+
+    console.warn(`[rotation] Attempt ${attempt + 1}/${MAX_TOTAL_ATTEMPTS}: ${provider.name}/${provider.model}`);
+
+    const result = await callOpenAICompatible(
+      provider.url,
+      apiKey,
+      provider.model,
+      messages,
+      providerParams,
+    );
+
+    if (result.ok) {
+      return json({ content: result.content });
+    }
+
+    // TypeScript narrowing: result is now the error variant
+    const errorResult = result as Extract<APIResult, { ok: false }>;
+    console.warn(`[rotation] ${provider.name} failed (${errorResult.status}): ${errorResult.error}`);
+
+    // Track failure
+    const currentFailures = consecutiveFailures.get(provider.name) ?? 0;
+    consecutiveFailures.set(provider.name, currentFailures + 1);
+
+    // Blacklist on 429 (rate limit) or 3 consecutive failures
+    if (errorResult.status === 429) {
+      blacklistedProviders.add(provider.name);
+      console.warn(`[rotation] ${provider.name} blacklisted (429 rate limit)`);
     }
   }
 
-  // 3. OpenRouter unavailable (or unconfigured) → try Groq as final fallback
-  const groqKey: string | undefined = penv?.GROQ_API_KEY;
-  if (allowGroq && groqKey) {
-    const result = await callOpenAICompatible(GROQ_API_URL, groqKey, GROQ_MODEL, messages, penaltyParams);
-    if (result.ok) return json({ content: result.content });
-    if (isErrorResult(result)) {
-      console.warn(`Groq failed (${result.status}): ${result.error}. No more providers.`);
-      return json(
-        {
-          error: result.error,
-          provider: "groq",
-          retryable: isRetryable(result.status),
-          suggestion: "Try again or switch to Cloud AI (Auto) for automatic fallback."
-        },
-        result.status
-      );
-    }
-  }
-
+  // ── All attempts exhausted — return fallback narrative ────────────────
   return json(
     {
-      error: "All AI providers are unavailable. Configure GEMINI_API_KEY, OPENROUTER_API_KEY, or GROQ_API_KEY.",
-      provider: null,
-      retryable: false,
-      suggestion: "Configure at least one API key (GEMINI_API_KEY, OPENROUTER_API_KEY, or GROQ_API_KEY) in your deployment."
+      content: getFallbackNarrative(),
+      fallback: true,
+      retryAfter: 5,
     },
-    503
+    200
   );
 }
