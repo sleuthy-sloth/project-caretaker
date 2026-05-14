@@ -18,17 +18,9 @@ const PROVIDERS: ProviderConfig[] = [
     name: "gemini",
     url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
     apiKeyEnvVar: "GEMINI_API_KEY",
-    model: "gemini-2.5-flash",
+    model: "gemini-3.1-flash-lite",
     supportsPenalties: false,
     supportsJsonResponse: true,
-  },
-  {
-    name: "openrouter",
-    url: "https://openrouter.ai/api/v1/chat/completions",
-    apiKeyEnvVar: "OPENROUTER_API_KEY",
-    model: "openrouter/free",
-    supportsPenalties: true,
-    supportsJsonResponse: false,
   },
   {
     name: "groq",
@@ -42,14 +34,21 @@ const PROVIDERS: ProviderConfig[] = [
     name: "mistral",
     url: "https://api.mistral.ai/v1/chat/completions",
     apiKeyEnvVar: "MISTRAL_API_KEY",
-    model: "open-mistral-nemo",
-    supportsPenalties: false,
+    model: "mistral-large-latest",
+    supportsPenalties: true,
     supportsJsonResponse: true,
+  },
+  {
+    name: "openrouter",
+    url: "https://openrouter.ai/api/v1/chat/completions",
+    apiKeyEnvVar: "OPENROUTER_API_KEY",
+    model: "openrouter/free",
+    supportsPenalties: true,
+    supportsJsonResponse: false,
   },
 ];
 
 const ATTEMPT_TIMEOUT_MS = 8_000;
-const MAX_TOTAL_ATTEMPTS = 5; // Full rotation once + one more pass
 
 // ── Fallback Narratives ──────────────────────────────────────────────────────
 
@@ -92,10 +91,6 @@ type Message = { role: string; content: string };
 type APIResult =
   | { ok: true; content: string }
   | { ok: false; status: number; error: string };
-
-function isErrorResult(result: APIResult): result is Extract<APIResult, { ok: false }> {
-  return result.ok === false;
-}
 
 function isRetryable(status: number): boolean {
   return status === 429 || status === 502 || status === 503 || status === 504;
@@ -185,21 +180,6 @@ function buildProviderParams(provider: ProviderConfig): Record<string, unknown> 
   return params;
 }
 
-/**
- * Check if a provider should be blacklisted based on prior failures in this request.
- * Blacklist rules:
- * - 429 rate-limit: skip for rest of request
- * - 3 consecutive failures: skip for rest of request
- */
-function isBlacklisted(
-  providerName: string,
-  blacklistedProviders: Set<string>,
-  consecutiveFailures: Map<string, number>,
-): boolean {
-  if (blacklistedProviders.has(providerName)) return true;
-  return (consecutiveFailures.get(providerName) ?? 0) >= 3;
-}
-
 // ── Main Handler ─────────────────────────────────────────────────────────────
 
 export default async function handler(req: Request): Promise<Response> {
@@ -260,11 +240,6 @@ export default async function handler(req: Request): Promise<Response> {
     { role: "user", content: prompt },
   ];
 
-  // ── Resolve retry offset from X-Retry-Attempt header ─────────────────
-  // This lets the client skip previously-failed providers on retry
-  const retryAttemptHeader = req.headers.get("X-Retry-Attempt") || "0";
-  const retryOffset = Math.max(0, parseInt(retryAttemptHeader, 10) || 0);
-
   // ── Build active provider list (only those with configured keys) ─────
   const penv = (process as any).env;
   const activeProviders: ProviderConfig[] = [];
@@ -286,41 +261,20 @@ export default async function handler(req: Request): Promise<Response> {
     );
   }
 
-  // ── Rotation start index ──────────────────────────────────────────────
-  // Round-robin starting point: (timestamp % N) advanced by retry offset
-  const startIndex = (Date.now() + retryOffset) % activeProviders.length;
-
-  // ── State tracking ───────────────────────────────────────────────────
+  // ── Cascading fallback — try providers in order ──────────────────────
+  // Try the strongest provider first. If it fails, cascade to the next.
+  // Only after all providers have been exhausted do we return a fallback.
   const blacklistedProviders = new Set<string>();
-  const consecutiveFailures = new Map<string, number>();
-  const attemptedIndices = new Set<number>();
-  let passCount = 0;
 
-  // ── Rotation loop — max MAX_TOTAL_ATTEMPTS attempts ──────────────────
-  for (let attempt = 0; attempt < MAX_TOTAL_ATTEMPTS; attempt++) {
-    const providerIndex = (startIndex + attempt) % activeProviders.length;
-
-    // If we've already tried every provider and wrapped around, increment pass count
-    if (attemptedIndices.has(providerIndex) && attemptedIndices.size === activeProviders.length) {
-      passCount++;
-      // After 1.5 passes (one full rotation + one extra), stop
-      if (passCount >= 1) break;
-    }
-    attemptedIndices.add(providerIndex);
-
-    const provider = activeProviders[providerIndex];
-
-    // Skip blacklisted providers
-    if (isBlacklisted(provider.name, blacklistedProviders, consecutiveFailures)) {
-      continue;
-    }
+  for (const provider of activeProviders) {
+    if (blacklistedProviders.has(provider.name)) continue;
 
     const apiKey = penv?.[provider.apiKeyEnvVar] as string | undefined;
     if (!apiKey) continue;
 
     const providerParams = buildProviderParams(provider);
 
-    console.warn(`[rotation] Attempt ${attempt + 1}/${MAX_TOTAL_ATTEMPTS}: ${provider.name}/${provider.model}`);
+    console.warn(`[cascade] Trying ${provider.name}/${provider.model}`);
 
     const result = await callOpenAICompatible(
       provider.url,
@@ -331,6 +285,7 @@ export default async function handler(req: Request): Promise<Response> {
     );
 
     if (result.ok) {
+      console.warn(`[cascade] ${provider.name} succeeded`);
       return json({
         content: result.content,
         provider: provider.name,
@@ -340,20 +295,15 @@ export default async function handler(req: Request): Promise<Response> {
 
     // TypeScript narrowing: result is now the error variant
     const errorResult = result as Extract<APIResult, { ok: false }>;
-    console.warn(`[rotation] ${provider.name} failed (${errorResult.status}): ${errorResult.error}`);
+    console.warn(`[cascade] ${provider.name} failed (${errorResult.status}): ${errorResult.error}`);
 
-    // Track failure
-    const currentFailures = consecutiveFailures.get(provider.name) ?? 0;
-    consecutiveFailures.set(provider.name, currentFailures + 1);
-
-    // Blacklist on 429 (rate limit) or 3 consecutive failures
+    // Blacklist on rate limit so we skip this provider for the rest of this request
     if (errorResult.status === 429) {
       blacklistedProviders.add(provider.name);
-      console.warn(`[rotation] ${provider.name} blacklisted (429 rate limit)`);
     }
   }
 
-  // ── All attempts exhausted — return fallback narrative ────────────────
+  // ── All providers exhausted — return fallback narrative ────────────────
   return json(
     {
       content: getFallbackNarrative(),

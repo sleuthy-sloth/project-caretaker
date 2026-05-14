@@ -251,4 +251,47 @@ describe("handler fallback narrative responses", () => {
     expect(data).toHaveProperty("fallback", true);
     expect(data).toHaveProperty("retryAfter", 5);
   });
+
+  it("tries providers in cascading order and continues on failure", async () => {
+    const origEnv = process.env;
+    // Configure two providers: first fails, second succeeds
+    process.env = { ...origEnv, GEMINI_API_KEY: "gemini-key", GROQ_API_KEY: "groq-key" };
+
+    const callOrder: string[] = [];
+    global.fetch = mock((url: string) => {
+      if (url.includes("generativelanguage")) {
+        callOrder.push("gemini");
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: "rate limited" }), {
+            status: 429,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      callOrder.push("groq");
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: '{"terminal_output":"ok"}' } }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      );
+    });
+
+    const { default: handler } = await import("./generate");
+    const req = mockRequest({
+      prompt: "hello",
+      history: [],
+    });
+    const res = await handler(req);
+    process.env = origEnv;
+    mock.restore();
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(callOrder).toEqual(["gemini", "groq"]);
+    expect(data.provider).toBe("groq");
+    expect(data.fallback).toBeUndefined();
+  });
 });
