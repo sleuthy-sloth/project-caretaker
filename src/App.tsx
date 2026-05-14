@@ -12,8 +12,9 @@ import { ShipStatusSidebar } from './components/ShipStatusSidebar';
 import { ResetConfirmModal } from './components/ResetConfirmModal';
 import { ShipMap } from './components/ShipMap';
 import { ShipState, ActiveAlarm, normalizeStress } from './lib/types';
+import { initStoryState } from './lib/storyState';
 
-const MAX_HISTORY_MESSAGES = 20;
+const MAX_HISTORY_MESSAGES = 40;
 
 function buildChatHistory(logs: LogEntry[]): ChatHistoryMessage[] {
   const conversational = logs.filter(l => l.sender === 'USER' || l.sender === 'AI');
@@ -383,6 +384,7 @@ export default function App() {
   const handleSignOut = async () => {
     try {
       await signOut(auth);
+      resetRetryCount();
       setShipState(null);
       setLogs([]);
       setLogsLoaded(false);
@@ -424,6 +426,9 @@ export default function App() {
       const logsRef = collection(db, 'ships', user.uid, 'terminalHistory');
       const snap = await getDocs(logsRef);
       await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+
+      // Reset story state (checkpoints, flags, threads) to beginning
+      await initStoryState(user.uid);
 
       // Reset ship vitals to starting values
       await setDoc(doc(db, 'ships', user.uid), {
