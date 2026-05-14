@@ -13,6 +13,8 @@ export interface AIResponse {
   ship_status: ShipStatus | null;
   active_alarms: string[];
   suggested_actions: string[];
+  provider?: string;
+  model?: string;
 }
 
 export interface ChatHistoryMessage {
@@ -25,6 +27,7 @@ export const CLOUD_MODEL_AUTO_ID = "cloud-auto";
 export function useCaretakerAI() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeModel, setActiveModel] = useState<string>("Initializing...");
   const retryCountRef = useRef(0);
 
   // Stub state for App.tsx compatibility until Phase 2 removes model picker
@@ -49,6 +52,15 @@ export function useCaretakerAI() {
         // Reset retry count on any successful response (even fallback)
         // so the next fresh command starts clean
         retryCountRef.current = 0;
+        
+        if (response.provider && response.model) {
+          setActiveModel(`${response.provider} // ${response.model}`);
+        } else if (response.provider) {
+          setActiveModel(response.provider);
+        } else {
+          setActiveModel("Cloud AI");
+        }
+
         return response;
       })
       .catch(err => {
@@ -80,6 +92,7 @@ export function useCaretakerAI() {
     sendMessage,
     retry,
     resetRetryCount,
-    generationElapsed
+    generationElapsed,
+    activeModel
   };
 }

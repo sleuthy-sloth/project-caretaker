@@ -29,6 +29,7 @@ export async function sendGroqMessage(
     throw new Error(errorMessage);
   }
 
-  const { content } = await response.json();
-  return parseAIResponse(content);
+  const { content, provider, model } = await response.json();
+  const parsed = parseAIResponse(content);
+  return { ...parsed, provider, model };
 }

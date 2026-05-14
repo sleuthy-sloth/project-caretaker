@@ -301,7 +301,11 @@ export default async function handler(req: Request): Promise<Response> {
     );
 
     if (result.ok) {
-      return json({ content: result.content });
+      return json({
+        content: result.content,
+        provider: provider.name,
+        model: provider.model,
+      });
     }
 
     // TypeScript narrowing: result is now the error variant

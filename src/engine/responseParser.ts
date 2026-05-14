@@ -4,6 +4,8 @@ export interface ParsedAIResponse {
   ship_status: { power_level: number; hull_integrity: number; stress_level: string } | null;
   active_alarms: string[];
   suggested_actions: string[];
+  provider?: string;
+  model?: string;
 }
 
 function clamp(value: number, min: number, max: number): number {

@@ -10,6 +10,7 @@ interface ShipStatusSidebarProps {
   shipState: ShipState | null;
   activeAlarms: ActiveAlarm[];
   isCloudMode: boolean;
+  activeModel: string;
   user: User | null;
   handleSignOut: () => void;
 }
@@ -20,6 +21,7 @@ export function ShipStatusSidebar({
   shipState,
   activeAlarms,
   isCloudMode,
+  activeModel,
   user,
   handleSignOut
 }: ShipStatusSidebarProps) {
@@ -110,7 +112,7 @@ export function ShipStatusSidebar({
           <div className="text-[9px] leading-relaxed opacity-60">
             Ship: GSS Theseus<br/>
             Year: 2173<br/>
-            Engine: {isCloudMode ? 'Cloud AI' : '@mlc-ai/web-llm'}<br/>
+            Engine: {isCloudMode ? activeModel : '@mlc-ai/web-llm'}<br/>
             Mode: {isCloudMode ? 'Remote inference' : 'Local / WebGPU'}<br/>
             Status: <span className="text-emerald-400">Ready</span>
           </div>

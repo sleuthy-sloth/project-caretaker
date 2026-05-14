@@ -46,7 +46,11 @@ export default function App() {
   const initializationTriggered = useRef(false);
   const lastCommandRef = useRef<string>("");
 
-  const { isInitializing, downloadProgress, progressText, isGenerating, isReady, isCloudMode, error, initAI, sendMessage, retry, generationElapsed } = useCaretakerAI();
+  const { 
+    isInitializing, downloadProgress, progressText, isGenerating, 
+    isReady, isCloudMode, error, initAI, sendMessage, retry, 
+    generationElapsed, activeModel 
+  } = useCaretakerAI();
 
   // Auth Effect
   useEffect(() => {
@@ -338,7 +342,7 @@ export default function App() {
         <div className="flex items-center gap-4 md:gap-8 text-[10px] uppercase tracking-tighter">
           <div className="hidden sm:flex flex-col">
             <span className="opacity-40 text-xs">Engine</span>
-            <span className="text-violet-400">Cloud AI</span>
+            <span className="text-violet-400">{activeModel}</span>
           </div>
           <div className="flex flex-col items-end">
             <span className="opacity-40 text-xs">Sync</span>
@@ -388,6 +392,7 @@ export default function App() {
           shipState={shipState}
           activeAlarms={activeAlarms}
           isCloudMode={isCloudMode}
+          activeModel={activeModel}
           user={user}
           handleSignOut={handleSignOut}
         />
