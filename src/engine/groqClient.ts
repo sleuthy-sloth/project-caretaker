@@ -14,7 +14,7 @@ export async function sendGroqMessage(
   const response = await fetch("/api/generate", {
     method: "POST",
     headers,
-    body: JSON.stringify({ prompt, history }),
+    body: JSON.stringify({ prompt, history, currentStatus }),
   });
 
   if (!response.ok) {

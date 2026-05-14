@@ -12,7 +12,7 @@ import { ResetConfirmModal } from './components/ResetConfirmModal';
 import { ShipMap } from './components/ShipMap';
 import { ShipState, ActiveAlarm, normalizeStress } from './lib/types';
 
-const MAX_HISTORY_MESSAGES = 8;
+const MAX_HISTORY_MESSAGES = 20;
 
 function buildChatHistory(logs: LogEntry[]): ChatHistoryMessage[] {
   const conversational = logs.filter(l => l.sender === 'USER' || l.sender === 'AI');

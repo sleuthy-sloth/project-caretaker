@@ -207,14 +207,14 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ error: "Method not allowed" }, 405);
   }
 
-  let body: { prompt?: unknown; history?: unknown };
+  let body: { prompt?: unknown; history?: unknown; currentStatus?: unknown };
   try {
     body = await req.json();
   } catch {
     return json({ error: "Invalid JSON body" }, 400);
   }
 
-  const { prompt, history = [] } = body;
+  const { prompt, history = [], currentStatus } = body;
 
   if (typeof prompt !== "string" || !prompt.trim()) {
     return json({ error: "Missing or empty prompt" }, 400);
@@ -224,8 +224,23 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ error: "history must be an array" }, 400);
   }
 
+  let dynamicSystemPrompt = SYSTEM_ORACLE_PROMPT;
+  
+  if (currentStatus) {
+    const status = currentStatus as any;
+    dynamicSystemPrompt += `\n\n===== CURRENT SHIP STATE =====\n`;
+    dynamicSystemPrompt += `Power Level: ${status.power_level}%\n`;
+    dynamicSystemPrompt += `Hull Integrity: ${status.hull_integrity}%\n`;
+    dynamicSystemPrompt += `Stress Level: ${status.stress_level}\n`;
+  }
+
+  if ((history as Message[]).length > 0) {
+    dynamicSystemPrompt += `\n\n===== MEMORY DIRECTIVE =====\n`;
+    dynamicSystemPrompt += `The Caretaker is ALREADY AWAKE. You are in the middle of an ongoing situation. Do NOT play the "Turn 1 - Arrival" opening sequence. Look at the chat history to infer the current situation and respond accordingly.`;
+  }
+
   const messages: Message[] = [
-    { role: "system", content: SYSTEM_ORACLE_PROMPT },
+    { role: "system", content: dynamicSystemPrompt },
     ...(history as Message[]),
     { role: "user", content: prompt },
   ];
