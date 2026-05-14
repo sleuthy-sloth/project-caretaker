@@ -11,6 +11,7 @@ import { SystemLockScreen } from './components/SystemLockScreen';
 import { ShipStatusSidebar } from './components/ShipStatusSidebar';
 import { ResetConfirmModal } from './components/ResetConfirmModal';
 import { ShipMap } from './components/ShipMap';
+import { ContinueScreen } from './components/ContinueScreen';
 import { ShipState, ActiveAlarm, normalizeStress } from './lib/types';
 import { initStoryState } from './lib/storyState';
 
@@ -47,14 +48,15 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  const [sessionStarted, setSessionStarted] = useState(false);
 
   const initializationTriggered = useRef(false);
   const lastCommandRef = useRef<string>("");
 
-  const { 
-    isInitializing, downloadProgress, progressText, isGenerating, 
-    isReady, isCloudMode, error, initAI, sendMessage, retry, 
-    generationElapsed, activeModel 
+  const {
+    isInitializing, downloadProgress, progressText, isGenerating,
+    isReady, isCloudMode, error, initAI, sendMessage, retry, resetRetryCount,
+    generationElapsed, activeModel
   } = useCaretakerAI();
 
   const { storyState, storyStateContext, applyUpdate } = useStoryState(user?.uid ?? null);
@@ -389,13 +391,57 @@ export default function App() {
     });
   }, [logs, retry, user, storyStateContext, applyUpdate]);
 
-  // Auto-send system init once ready
+  // Auto-boot the AI opening scene for new players (no prior logs)
   useEffect(() => {
-    if (isReady && logsLoaded && !shipLoading && logs.length === 0 && !initializationTriggered.current) {
-      initializationTriggered.current = true;
-      pushTerminalLog("[SYSTEM INITIALIZATION] Waking Caretaker from Pod 04. Boot sequence complete. Provide immediate sitrep to Caretaker terminal.", "SYSTEM");
-    }
-  }, [isReady, logsLoaded, shipLoading, logs.length]);
+    if (!isReady || !logsLoaded || shipLoading || !user || !shipState) return;
+    if (logs.length > 0 || initializationTriggered.current) return;
+
+    initializationTriggered.current = true;
+
+    pushTerminalLog(
+      "GSS THESEUS // EMERGENCY OPERATIONS INTERFACE\n" +
+      "Aegis Core v2.1.0 — Cognitive Matrix: 40% operational\n" +
+      "─────────────────────────────────────────\n" +
+      "Cryo Pod 04: cycling complete — Caretaker-04 vitals nominal\n" +
+      "Connecting to Aegis Core inference relay...\n\n" +
+      "Tip: Type naturally. Aegis understands plain English — ask questions,\n" +
+      "give orders, or investigate. Try: STATUS, LOOK AROUND, WHAT HAPPENED",
+      "SYSTEM"
+    );
+
+    const currentStatus = {
+      power_level: shipState.power,
+      hull_integrity: shipState.hull,
+      stress_level: shipState.stress,
+    };
+
+    sendMessage(
+      "Begin the story. Deliver the opening wake-up scene as Aegis Core addressing Caretaker-04.",
+      [],
+      currentStatus,
+      storyStateContext
+    ).then(aiResponse => {
+      if (aiResponse.story_state_update) applyUpdate(aiResponse.story_state_update);
+      if (aiResponse.scene_description?.trim()) pushTerminalLog(aiResponse.scene_description, "SCENE");
+      pushTerminalLog(aiResponse.terminal_output, "AI");
+      setActiveAlarms((aiResponse.active_alarms || []).map((text, i) => ({ id: `alarm-${Date.now()}-${i}`, text })));
+      setSuggestedActions(aiResponse.suggested_actions || []);
+      if (aiResponse.ship_status) {
+        updateDoc(doc(db, 'ships', user.uid), {
+          hull: aiResponse.ship_status.hull_integrity,
+          power: aiResponse.ship_status.power_level,
+          stress: aiResponse.ship_status.stress_level,
+          updatedAt: serverTimestamp(),
+        }).catch(err => console.error('Failed to update ship state:', err));
+      }
+    }).catch(err => {
+      console.error('[boot] AI opening failed:', err);
+      pushTerminalLog(
+        "AEGIS CORE: Connection to inference relay established. Caretaker, I need your attention — please enter a command.",
+        "AI"
+      );
+    });
+  }, [isReady, logsLoaded, shipLoading, logs.length, user, shipState]);
 
   const handleSignOut = async () => {
     try {
@@ -408,6 +454,7 @@ export default function App() {
       setSuggestedActions([]);
       setShowSidebar(false);
       setShowMap(false);
+      setSessionStarted(false);
       initializationTriggered.current = false;
     } catch (err) {
       console.error('Sign out failed:', err);
@@ -472,6 +519,21 @@ export default function App() {
         handleLogin={handleLogin}
         handleRedirectLogin={handleRedirectLogin}
         handleGuestLogin={handleGuestLogin}
+      />
+    );
+  }
+
+  // Returning player — show session restore screen until they choose Resume or New Game
+  if (logsLoaded && !shipLoading && logs.length > 0 && !sessionStarted) {
+    return (
+      <ContinueScreen
+        storyState={storyState}
+        shipState={shipState}
+        onResume={() => setSessionStarted(true)}
+        onNewGame={async () => {
+          setSessionStarted(true);
+          await handleReset();
+        }}
       />
     );
   }
