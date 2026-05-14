@@ -397,6 +397,7 @@ export default function App() {
     if (logs.length > 0 || initializationTriggered.current) return;
 
     initializationTriggered.current = true;
+    setSessionStarted(true);
 
     pushTerminalLog(
       "GSS THESEUS // EMERGENCY OPERATIONS INTERFACE\n" +
