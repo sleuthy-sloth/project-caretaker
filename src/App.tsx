@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Terminal, LogEntry } from './components/Terminal';
 import { useCaretakerAI, AIResponse, ChatHistoryMessage } from './hooks/useCaretakerAI';
-import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
+import { auth, db, firebaseInitError, handleFirestoreError, OperationType } from './lib/firebase';
 import { signInWithPopup, signInWithRedirect, signInAnonymously, getRedirectResult, linkWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User } from 'firebase/auth';
-import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, enableMultiTabIndexedDbPersistence } from 'firebase/firestore';
 import { Skull, AlertTriangle, RotateCcw, Ship, LogOut, PanelLeft, X, Map as MapIcon } from 'lucide-react';
 
 import { SystemLockScreen } from './components/SystemLockScreen';
@@ -35,6 +35,7 @@ export default function App() {
   const [shipState, setShipState] = useState<ShipState | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logsLoaded, setLogsLoaded] = useState(false);
+  const [shipLoading, setShipLoading] = useState(true);
   const [activeAlarms, setActiveAlarms] = useState<ActiveAlarm[]>([]);
   const [suggestedActions, setSuggestedActions] = useState<string[]>([]);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -61,6 +62,22 @@ export default function App() {
       setAuthInitialized(true);
     });
     return () => unsubscribe();
+  }, []);
+
+  // Firestore offline persistence
+  useEffect(() => {
+    if (firebaseInitError) return;
+    enableMultiTabIndexedDbPersistence(db).catch((err) => {
+      if (err.code === 'failed-precondition') {
+        // Multiple tabs open — persistence can only be enabled in one tab
+        console.warn('[caretaker] Offline persistence unavailable: multiple tabs open');
+      } else if (err.code === 'unimplemented') {
+        // Browser doesn't support persistence
+        console.warn('[caretaker] Offline persistence not supported by this browser');
+      } else {
+        console.error('[caretaker] Offline persistence error:', err);
+      }
+    });
   }, []);
 
   const provider = useRef(new GoogleAuthProvider()).current;
@@ -141,8 +158,12 @@ export default function App() {
     }
   };
 
+  const redirectResultHandled = useRef(false);
+
   // Handle redirect-based sign-in (explicit user choice)
   useEffect(() => {
+    if (redirectResultHandled.current) return;
+    redirectResultHandled.current = true;
     getRedirectResult(auth).then((result) => {
       if (result) {
         // Successfully signed in via redirect
@@ -176,6 +197,7 @@ export default function App() {
           power: data.power,
           stress: normalizeStress(data.stress),
         });
+        setShipLoading(false);
       } else {
         (async () => {
           try {
@@ -187,12 +209,14 @@ export default function App() {
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp()
             });
+            setShipLoading(false);
           } catch (err) {
             handleFirestoreError(err, OperationType.CREATE, 'ships/' + user.uid);
           }
         })();
       }
     }, (err) => {
+      setShipLoading(false);
       handleFirestoreError(err, OperationType.GET, 'ships/' + user.uid);
     });
 
@@ -237,14 +261,12 @@ export default function App() {
     });
   };
 
-  const handleCommand = async (command: string, isHidden: boolean = false) => {
+  const handleCommand = async (command: string) => {
     if (!user || !shipState) return;
 
     // 1. Echo user command (fire & forget — don't block UI)
-    if (!isHidden) {
-      pushTerminalLog(command, "USER");
-      lastCommandRef.current = command; // Track for retry
-    }
+    pushTerminalLog(command, "USER");
+    lastCommandRef.current = command; // Track for retry
 
     // 2. Generate AI response (this legitimately blocks — AI is the bottleneck)
     try {
@@ -328,11 +350,11 @@ export default function App() {
 
   // Auto-send system init once ready
   useEffect(() => {
-    if (isReady && logsLoaded && logs.length === 0 && !initializationTriggered.current) {
+    if (isReady && logsLoaded && !shipLoading && logs.length === 0 && !initializationTriggered.current) {
       initializationTriggered.current = true;
-      handleCommand("[SYSTEM INITIALIZATION] Waking Caretaker from Pod 04. Boot sequence complete. Provide immediate sitrep to Caretaker terminal.", true);
+      pushTerminalLog("[SYSTEM INITIALIZATION] Waking Caretaker from Pod 04. Boot sequence complete. Provide immediate sitrep to Caretaker terminal.", "SYSTEM");
     }
-  }, [isReady, logsLoaded, logs.length]);
+  }, [isReady, logsLoaded, shipLoading, logs.length]);
 
   const handleSignOut = async () => {
     try {
@@ -349,6 +371,19 @@ export default function App() {
       console.error('Sign out failed:', err);
     }
   };
+
+  // Check for Firebase initialization error before any auth checks
+  if (firebaseInitError) {
+    return (
+      <SystemLockScreen
+        authError={firebaseInitError}
+        authLoading={false}
+        handleLogin={() => {}}
+        handleRedirectLogin={() => {}}
+        handleGuestLogin={() => {}}
+      />
+    );
+  }
 
   // Game reset — wipes terminal history, resets ship vitals, lets the
   // auto-init effect fire the AI's opening sequence once logs hit zero.

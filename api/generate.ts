@@ -68,16 +68,22 @@ const FALLBACK_NARRATIVES: string[] = [
 
 // ── Shared Utilities ─────────────────────────────────────────────────────────
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
+function getCorsHeaders(): Record<string, string> {
+  // For Vercel deployments, use the deployment URL. For local dev, allow all.
+  const origin = (process as any).env?.APP_URL || (process as any).env?.VERCEL_URL 
+    ? `https://${(process as any).env.VERCEL_URL || ''}` 
+    : '*';
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+  };
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+    headers: { "Content-Type": "application/json", ...getCorsHeaders() },
   });
 }
 
@@ -128,7 +134,6 @@ async function callOpenAICompatible(
         messages,
         temperature: 0.85,
         max_tokens: 1024,
-        response_format: { type: "json_object" },
         ...extraParams,
       }),
       signal: controller.signal,
@@ -174,9 +179,8 @@ function buildProviderParams(provider: ProviderConfig): Record<string, unknown> 
     params.frequency_penalty = 0.7;
     params.presence_penalty = 0.4;
   }
-  // OpenRouter's free model pool rejects response_format
-  if (!provider.supportsJsonResponse) {
-    params.response_format = undefined;
+  if (provider.supportsJsonResponse) {
+    params.response_format = { type: "json_object" };
   }
   return params;
 }
@@ -200,7 +204,7 @@ function isBlacklisted(
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
+    return new Response(null, { status: 204, headers: getCorsHeaders() });
   }
 
   if (req.method !== "POST") {

@@ -139,6 +139,8 @@ export function ShipRadar({ shipState }: ShipRadarProps) {
 
     return () => {
       cancelAnimationFrame(animationFrameId);
+      // Clear canvas to avoid flicker on re-mount
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
     };
   }, []);
 

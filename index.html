@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Project Caretaker</title>
 
+    <!-- Preload fonts -->
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" as="style" crossorigin />
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@700&display=swap" as="style" crossorigin />
+
     <!-- PWA manifest + theme -->
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#050507" />
@@ -21,12 +25,5 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', function () {
-          navigator.serviceWorker.register('/sw.js').catch(function () {});
-        });
-      }
-    </script>
   </body>
 </html>

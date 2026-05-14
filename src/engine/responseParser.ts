@@ -59,12 +59,8 @@ function extractFields(raw: string, currentStatus?: ParsedAIResponse['ship_statu
 
   // 5. Extract Scene Description (atmospheric setting text)
   let scene_description = "";
-  const sceneMatch = raw.match(/"scene_description"\s*:\s*"([^"]+)"/);
+  const sceneMatch = raw.match(/"scene_description"\s*:\s*"((?:[^"\\]|\\.)*)"/);
   if (sceneMatch) scene_description = sceneMatch[1];
-
-  // Default values if no data found
-  if (active_alarms.length === 0) active_alarms = ["PARTIAL_PARSE_RECOVERY"];
-  if (suggested_actions.length === 0) suggested_actions = ["DIAGNOSE SYSTEMS", "ENTER COMMAND"];
 
   return {
     terminal_output: terminal_output.trim() || "SIGNAL CORRUPTED. RETRANSMITTING...",
@@ -81,6 +77,7 @@ function extractFields(raw: string, currentStatus?: ParsedAIResponse['ship_statu
 
 export function parseAIResponse(responseText: string, currentStatus?: ParsedAIResponse['ship_status']): ParsedAIResponse {
   let parsed: ParsedAIResponse | null = null;
+  let usedFallback = false;
 
   // Try parsing pure JSON first (find bounded json if wrapped in markdown)
   const jsonMatch = responseText.match(/\{[\s\S]*\}/);
@@ -93,6 +90,7 @@ export function parseAIResponse(responseText: string, currentStatus?: ParsedAIRe
   }
 
   if (!parsed) {
+    usedFallback = true;
     parsed = extractFields(responseText, currentStatus);
   }
 
@@ -106,6 +104,16 @@ export function parseAIResponse(responseText: string, currentStatus?: ParsedAIRe
 
   if (typeof parsed.scene_description !== "string") {
     parsed.scene_description = "";
+  }
+
+  // Only add sentinel values when extractFields fallback was used (genuine parse failure)
+  if (usedFallback) {
+    if (parsed.active_alarms.length === 0) {
+      parsed.active_alarms = ["PARTIAL_PARSE_RECOVERY"];
+    }
+    if (parsed.suggested_actions.length === 0) {
+      parsed.suggested_actions = ["DIAGNOSE SYSTEMS", "ENTER COMMAND"];
+    }
   }
 
   return parsed;

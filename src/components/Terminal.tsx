@@ -53,6 +53,7 @@ export function Terminal({ logs, logsLoaded, onCommand, isGenerating, suggestedA
   const pendingAnimations = useRef(new Set<string>());
   const completedIds = useRef(new Set<string>());
   const fullTextById = useRef(new Map<string, string>());
+  const initialBatchComplete = useRef(false);
 
   const startAnimation = useCallback((logId: string, fullText: string) => {
     if (pendingAnimations.current.has(logId)) return;
@@ -68,15 +69,15 @@ export function Terminal({ logs, logsLoaded, onCommand, isGenerating, suggestedA
         return;
       }
       if (index < fullText.length) {
-        // Chunked rendering — render multiple chars per frame for speed
-        const chunkSize = fullText.length > 500 ? 6 : 3;
+        // Chunked rendering — batch more chars per frame to reduce re-renders
+        const chunkSize = fullText.length > 500 ? 30 : 15;
         const chunk = fullText.slice(index, index + chunkSize);
         index += chunkSize;
         setDisplayedText(prev => ({
           ...prev,
           [logId]: (prev[logId] || '') + chunk,
         }));
-        const delay = chunk.includes('\n') ? 10 : 3;
+        const delay = chunk.includes('\n') ? 50 : 20;
         setTimeout(step, delay);
       } else {
         pendingAnimations.current.delete(logId);
@@ -97,6 +98,10 @@ export function Terminal({ logs, logsLoaded, onCommand, isGenerating, suggestedA
       completeAllAnimations();
     }
 
+    // Check if this is the initial batch of logs loaded from Firestore
+    // (session restore). If so, render all logs instantly without animation.
+    const isInitialBatch = !initialBatchComplete.current;
+
     logs.forEach(log => {
       if (log.sender === 'USER') {
         setDisplayedText(prev => {
@@ -106,17 +111,33 @@ export function Terminal({ logs, logsLoaded, onCommand, isGenerating, suggestedA
           return prev;
         });
       } else if (log.sender === 'AI' || log.sender === 'SYSTEM' || log.sender === 'SCENE') {
-        setDisplayedText(prev => {
-          if (prev[log.id] === undefined) {
-            return { ...prev, [log.id]: '' };
+        if (isInitialBatch) {
+          // Session restore — render instantly, no typewriter
+          setDisplayedText(prev => {
+            if (prev[log.id] === undefined) {
+              return { ...prev, [log.id]: log.text };
+            }
+            return prev;
+          });
+        } else {
+          // New log arriving after initial load — use typewriter animation
+          setDisplayedText(prev => {
+            if (prev[log.id] === undefined) {
+              return { ...prev, [log.id]: '' };
+            }
+            return prev;
+          });
+          if (!pendingAnimations.current.has(log.id)) {
+            setTimeout(() => startAnimation(log.id, log.text), 50);
           }
-          return prev;
-        });
-        if (!pendingAnimations.current.has(log.id)) {
-          setTimeout(() => startAnimation(log.id, log.text), 50);
         }
       }
     });
+
+    // Mark initial batch as complete after the first time this effect runs with logs
+    if (logs.length > 0) {
+      initialBatchComplete.current = true;
+    }
   }, [logs, startAnimation, completeAllAnimations]);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -138,7 +159,7 @@ export function Terminal({ logs, logsLoaded, onCommand, isGenerating, suggestedA
   };
 
   return (
-    <div className="flex-1 bg-black/60 border border-cyan-500/20 rounded-lg p-4 md:p-6 flex flex-col shadow-[inset_0_0_40px_rgba(0,0,0,0.8)] overflow-hidden relative">
+    <div className="flex-1 bg-black/60 border border-cyan-500/20 rounded-lg p-4 md:p-6 flex flex-col shadow-[inset_0_0_40px_rgba(0,0,0,0.8)] overflow-hidden relative" onClick={completeAllAnimations}>
       <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-[0.03]"
            style={{ backgroundImage: "repeating-linear-gradient(0deg, #fff, #fff 1px, transparent 1px, transparent 2px)" }}></div>
 
