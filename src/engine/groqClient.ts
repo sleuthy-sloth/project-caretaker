@@ -5,7 +5,8 @@ export async function sendGroqMessage(
   prompt: string,
   history: ChatHistoryMessage[],
   retryAttempt: number = 0,
-  currentStatus?: ParsedAIResponse['ship_status']
+  currentStatus?: ParsedAIResponse['ship_status'],
+  storyState?: string
 ): Promise<ParsedAIResponse> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (retryAttempt > 0) {
@@ -16,7 +17,7 @@ export async function sendGroqMessage(
     response = await fetch("/api/generate", {
       method: "POST",
       headers,
-      body: JSON.stringify({ prompt, history, currentStatus }),
+      body: JSON.stringify({ prompt, history, currentStatus, storyState }),
     });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);

@@ -13,6 +13,12 @@ export interface AIResponse {
   ship_status: ShipStatus | null;
   active_alarms: string[];
   suggested_actions: string[];
+  story_state_update?: {
+    advance_checkpoint?: string;
+    set_flags?: Record<string, string | boolean | number>;
+    resolve_thread?: string;
+    add_thread?: string;
+  };
   provider?: string;
   model?: string;
 }
@@ -45,12 +51,13 @@ export function useCaretakerAI() {
   const sendMessage = useCallback((
     prompt: string, 
     history: ChatHistoryMessage[] = [], 
-    currentStatus?: AIResponse['ship_status']
+    currentStatus?: AIResponse['ship_status'],
+    storyState?: string
   ): Promise<AIResponse> => {
     setIsGenerating(true);
     setError(null);
     const attempt = retryCountRef.current;
-    return sendGroqMessage(prompt, history, attempt, currentStatus)
+    return sendGroqMessage(prompt, history, attempt, currentStatus, storyState)
       .then(response => {
         setIsGenerating(false);
         // Reset retry count on any successful response (even fallback)
@@ -78,10 +85,11 @@ export function useCaretakerAI() {
   const retry = useCallback((
     prompt: string, 
     history: ChatHistoryMessage[] = [], 
-    currentStatus?: AIResponse['ship_status']
+    currentStatus?: AIResponse['ship_status'],
+    storyState?: string
   ): Promise<AIResponse> => {
     retryCountRef.current += 1;
-    return sendMessage(prompt, history, currentStatus);
+    return sendMessage(prompt, history, currentStatus, storyState);
   }, [sendMessage]);
 
   const resetRetryCount = useCallback(() => {

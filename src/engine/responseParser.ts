@@ -4,6 +4,12 @@ export interface ParsedAIResponse {
   ship_status: { power_level: number; hull_integrity: number; stress_level: string } | null;
   active_alarms: string[];
   suggested_actions: string[];
+  story_state_update?: {
+    advance_checkpoint?: string;
+    set_flags?: Record<string, string | boolean | number>;
+    resolve_thread?: string;
+    add_thread?: string;
+  };
   provider?: string;
   model?: string;
 }
@@ -62,6 +68,16 @@ function extractFields(raw: string, currentStatus?: ParsedAIResponse['ship_statu
   const sceneMatch = raw.match(/"scene_description"\s*:\s*"((?:[^"\\]|\\.)*)"/);
   if (sceneMatch) scene_description = sceneMatch[1];
 
+  // 6. Extract story_state_update (best-effort from raw text)
+  let story_state_update: ParsedAIResponse['story_state_update'] = undefined;
+  const ssMatch = raw.match(/"story_state_update"\s*:\s*\{([\s\S]*?)\}(?=\s*[,}\n])/);
+  if (ssMatch) {
+    try {
+      const parsed = JSON.parse(`{${ssMatch[1]}}`);
+      story_state_update = parsed;
+    } catch { /* best effort */ }
+  }
+
   return {
     terminal_output: terminal_output.trim() || "SIGNAL CORRUPTED. RETRANSMITTING...",
     scene_description,
@@ -70,6 +86,7 @@ function extractFields(raw: string, currentStatus?: ParsedAIResponse['ship_statu
       hull_integrity: clamp(Number(hullMatch?.[1]) || currentStatus?.hull_integrity || 50, 0, 100),
       stress_level,
     },
+    story_state_update,
     active_alarms,
     suggested_actions,
   };
@@ -114,6 +131,10 @@ export function parseAIResponse(responseText: string, currentStatus?: ParsedAIRe
     if (parsed.suggested_actions.length === 0) {
       parsed.suggested_actions = ["DIAGNOSE SYSTEMS", "ENTER COMMAND"];
     }
+  }
+
+  if (typeof parsed.story_state_update !== 'object' || parsed.story_state_update === null) {
+    delete parsed.story_state_update;
   }
 
   return parsed;

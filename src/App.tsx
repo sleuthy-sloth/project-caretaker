@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Terminal, LogEntry } from './components/Terminal';
 import { useCaretakerAI, AIResponse, ChatHistoryMessage } from './hooks/useCaretakerAI';
+import { useStoryState } from './hooks/useStoryState';
 import { auth, db, firebaseInitError, handleFirestoreError, OperationType } from './lib/firebase';
 import { signInWithPopup, signInWithRedirect, signInAnonymously, getRedirectResult, linkWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, enableMultiTabIndexedDbPersistence } from 'firebase/firestore';
@@ -53,6 +54,8 @@ export default function App() {
     isReady, isCloudMode, error, initAI, sendMessage, retry, 
     generationElapsed, activeModel 
   } = useCaretakerAI();
+
+  const { storyState, storyStateContext, applyUpdate } = useStoryState(user?.uid ?? null);
 
   // Auth Effect
   useEffect(() => {
@@ -276,9 +279,14 @@ export default function App() {
         hull_integrity: shipState.hull,
         stress_level: shipState.stress
       } : undefined;
-      const aiResponse: AIResponse = await sendMessage(command, history, currentStatus);
+      const aiResponse: AIResponse = await sendMessage(command, history, currentStatus, storyStateContext);
 
-      // 3. Write AI response + ship update in parallel (fire & forget)
+      // 3. Apply story state update from AI response
+      if (aiResponse.story_state_update) {
+        applyUpdate(aiResponse.story_state_update);
+      }
+
+      // 4. Write AI response + ship update in parallel (fire & forget)
       //    Scene description (if any) is pushed first so it renders above
       //    Aegis's dialogue — establishing the camera before the voice.
       if (aiResponse.scene_description && aiResponse.scene_description.trim()) {
@@ -286,7 +294,7 @@ export default function App() {
       }
       pushTerminalLog(aiResponse.terminal_output, "AI");
 
-      // 4. Update alarms & suggested actions for the UI
+      // 5. Update alarms & suggested actions for the UI
       setActiveAlarms(
         (aiResponse.active_alarms || []).map((text: string, i: number) => ({
           id: `alarm-${Date.now()}-${i}`,
@@ -295,7 +303,7 @@ export default function App() {
       );
       setSuggestedActions(aiResponse.suggested_actions || []);
 
-      // 5. Update ship state in Firestore (fire & forget)
+      // 6. Update ship state in Firestore (fire & forget)
       if (aiResponse.ship_status) {
         updateDoc(doc(db, 'ships', user.uid), {
           hull: aiResponse.ship_status.hull_integrity,
@@ -322,7 +330,10 @@ export default function App() {
       hull_integrity: shipState.hull,
       stress_level: shipState.stress
     } : undefined;
-    retry(cmd, history, currentStatus).then(aiResponse => {
+    retry(cmd, history, currentStatus, storyStateContext).then(aiResponse => {
+      if (aiResponse.story_state_update) {
+        applyUpdate(aiResponse.story_state_update);
+      }
       if (aiResponse.scene_description?.trim()) {
         pushTerminalLog(aiResponse.scene_description, "SCENE");
       }
@@ -346,7 +357,7 @@ export default function App() {
       console.error(err);
       pushTerminalLog("ERROR: AEGIS CORE UNRESPONSIVE.", "SYSTEM");
     });
-  }, [logs, retry, user]);
+  }, [logs, retry, user, storyStateContext, applyUpdate]);
 
   // Auto-send system init once ready
   useEffect(() => {

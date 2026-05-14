@@ -211,14 +211,14 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ error: "Method not allowed" }, 405);
   }
 
-  let body: { prompt?: unknown; history?: unknown; currentStatus?: unknown };
+  let body: { prompt?: unknown; history?: unknown; currentStatus?: unknown; storyState?: unknown };
   try {
     body = await req.json();
   } catch {
     return json({ error: "Invalid JSON body" }, 400);
   }
 
-  const { prompt, history = [], currentStatus } = body;
+  const { prompt, history = [], currentStatus, storyState } = body;
 
   if (typeof prompt !== "string" || !prompt.trim()) {
     return json({ error: "Missing or empty prompt" }, 400);
@@ -236,6 +236,12 @@ export default async function handler(req: Request): Promise<Response> {
     dynamicSystemPrompt += `Power Level: ${status.power_level}%\n`;
     dynamicSystemPrompt += `Hull Integrity: ${status.hull_integrity}%\n`;
     dynamicSystemPrompt += `Stress Level: ${status.stress_level}\n`;
+  }
+
+  if (typeof storyState === 'string' && storyState.trim()) {
+    dynamicSystemPrompt += `\n\n===== ACTIVE STORY STATE =====\n`;
+    dynamicSystemPrompt += storyState;
+    dynamicSystemPrompt += `\n`;
   }
 
   if ((history as Message[]).length > 0) {

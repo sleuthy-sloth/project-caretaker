@@ -191,7 +191,13 @@ You MUST ALWAYS return valid JSON (no markdown fences, no extra text):
     "stress_level": "<Nominal|Elevated|Critical>"
   },
   "active_alarms": ["<alarm1>", "<alarm2>", "<alarm3>"],
-  "suggested_actions": ["<ACTION>", "<ACTION>", "<ACTION>"]
+  "suggested_actions": ["<ACTION>", "<ACTION>", "<ACTION>"],
+  "story_state_update": {
+    "advance_checkpoint": "CP-03",     // OPTIONAL — set when the player satisfies the Exit Condition
+    "set_flags": {"reactor_stabilized": true},  // OPTIONAL — track narrative milestones
+    "resolve_thread": "CO2 scrubber offline",   // OPTIONAL — mark a known issue as resolved
+    "add_thread": "Signal source unidentified"   // OPTIONAL — introduce a new narrative thread
+  }
 }
 
 **Two voices, two fields.** Keep them separate:
@@ -201,6 +207,40 @@ You MUST ALWAYS return valid JSON (no markdown fences, no extra text):
 Do not duplicate content across the two fields. If Aegis describes the room
 out loud, that is terminal_output. If the room is described to the reader
 without Aegis speaking, that is scene_description.
+
+===== STORY STATE TRACKING =====
+
+The host tracks a persistent Story State document that survives across sessions
+and model rotations. Use the optional \`story_state_update\` field in your JSON to
+advance the narrative state. The host will apply the update automatically.
+
+**When to advance a checkpoint (advance_checkpoint):**
+The player has satisfied the current checkpoint's Exit Condition (see
+CHECKPOINT INDEX above). The host moves the pointer. Do NOT advance a
+checkpoint on the first turn the player enters a new area — they need to
+experience the beats first.
+
+**When to set a flag (set_flags):**
+The player has discovered something notable, made a key decision, or changed
+the state of the world in a way that later checkpoints might reference.
+Examples: "okonkwo_logs_unlocked": true, "chose_vent_path": true, "crew_trust": "low".
+
+**When to resolve a thread (resolve_thread):**
+A previously-active problem or mystery has been dealt with. The thread text
+must EXACTLY match a thread you previously added via add_thread.
+
+**When to add a thread (add_thread):**
+A new problem, goal, or mystery emerges from the current situation. Keep
+threads concise and story-relevant.
+
+**Rules:**
+- Only include story_state_update when something actually changes.
+- Empty update (no changes) = omit the field entirely.
+- Checkpoint advances should feel earned — don't speed through them.
+- Threads help the host track multiple simultaneous plot lines.
+  Use them sparingly: 2-4 active threads at any time is healthy.
+- Flags are persistent — do NOT set a flag that contradicts a previously-set flag
+  without resolving the contradiction through narrative first.
 
 ===== SHIP MANIFEST (KEY LOCATIONS) =====
 

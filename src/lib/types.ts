@@ -23,3 +23,30 @@ export function getStressBarWidth(stress: string): { width: string; color: strin
   if (lower === "elevated") return { width: "60%", color: "bg-rose-400" };
   return { width: "10%", color: "bg-emerald-500" };
 }
+
+export interface StoryState {
+  activeCheckpoint: string;
+  completedCheckpoints: string[];
+  storyFlags: Record<string, string | boolean | number>;
+  activePlotThreads: string[];
+  resolvedPlotThreads: string[];
+  turnCount: number;
+  updatedAt: number | null;
+}
+
+export interface StoryStateUpdate {
+  advance_checkpoint?: string;
+  set_flags?: Record<string, string | boolean | number>;
+  resolve_thread?: string;
+  add_thread?: string;
+}
+
+export const DEFAULT_STORY_STATE: StoryState = {
+  activeCheckpoint: "CP-01",
+  completedCheckpoints: [],
+  storyFlags: {},
+  activePlotThreads: [],
+  resolvedPlotThreads: [],
+  turnCount: 0,
+  updatedAt: null,
+};
