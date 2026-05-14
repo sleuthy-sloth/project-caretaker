@@ -11,11 +11,19 @@ export async function sendGroqMessage(
   if (retryAttempt > 0) {
     headers["X-Retry-Attempt"] = String(retryAttempt);
   }
-  const response = await fetch("/api/generate", {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ prompt, history, currentStatus }),
-  });
+  let response: Response;
+  try {
+    response = await fetch("/api/generate", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ prompt, history, currentStatus }),
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `Unable to reach the Oracle relay (/api/generate). ${detail}. If you're running locally, start the app with \`vercel dev\` so the API route is available.`
+    );
+  }
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
