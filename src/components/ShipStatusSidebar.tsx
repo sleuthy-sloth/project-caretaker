@@ -1,7 +1,7 @@
 import React from 'react';
 import { User } from 'firebase/auth';
 import { ShipState, ActiveAlarm, getStressBarWidth } from '../lib/types';
-import { X, AlertTriangle, LogOut } from 'lucide-react';
+import { X, AlertTriangle, LogOut, UserPlus } from 'lucide-react';
 import { ShipRadar } from './ShipRadar';
 
 interface ShipStatusSidebarProps {
@@ -12,7 +12,9 @@ interface ShipStatusSidebarProps {
   isCloudMode: boolean;
   activeModel: string;
   user: User | null;
+  isAnonymous: boolean;
   handleSignOut: () => void;
+  handleLinkAccount: () => void;
 }
 
 export function ShipStatusSidebar({
@@ -23,7 +25,9 @@ export function ShipStatusSidebar({
   isCloudMode,
   activeModel,
   user,
-  handleSignOut
+  isAnonymous,
+  handleSignOut,
+  handleLinkAccount
 }: ShipStatusSidebarProps) {
   return (
     <aside
@@ -120,18 +124,42 @@ export function ShipStatusSidebar({
 
         {/* Account / session controls */}
         <div className="space-y-2">
-          {user?.email && (
-            <div className="text-[9px] opacity-50 truncate" title={user.email}>
-              Signed in as {user.email}
-            </div>
+          {isAnonymous ? (
+            <>
+              <div className="text-[9px] opacity-50 truncate">
+                Guest Session
+              </div>
+              <button
+                onClick={handleLinkAccount}
+                className="w-full flex items-center justify-center gap-2 border border-amber-500/40 text-amber-400/80 hover:text-amber-300 hover:border-amber-400/60 px-3 py-2 text-[10px] uppercase tracking-widest transition-colors cursor-pointer"
+              >
+                <UserPlus className="w-3 h-3" />
+                Sign In to Save Progress
+              </button>
+              <button
+                onClick={handleSignOut}
+                className="w-full flex items-center justify-center gap-2 border border-cyan-500/30 text-cyan-400/80 hover:text-cyan-300 hover:border-cyan-400/60 px-3 py-2 text-[10px] uppercase tracking-widest transition-colors cursor-pointer"
+              >
+                <LogOut className="w-3 h-3" />
+                Exit Guest Mode
+              </button>
+            </>
+          ) : (
+            <>
+              {user?.email && (
+                <div className="text-[9px] opacity-50 truncate" title={user.email}>
+                  Signed in as {user.email}
+                </div>
+              )}
+              <button
+                onClick={handleSignOut}
+                className="w-full flex items-center justify-center gap-2 border border-cyan-500/30 text-cyan-400/80 hover:text-cyan-300 hover:border-cyan-400/60 px-3 py-2 text-[10px] uppercase tracking-widest transition-colors cursor-pointer"
+              >
+                <LogOut className="w-3 h-3" />
+                Sign Out
+              </button>
+            </>
           )}
-          <button
-            onClick={handleSignOut}
-            className="w-full flex items-center justify-center gap-2 border border-cyan-500/30 text-cyan-400/80 hover:text-cyan-300 hover:border-cyan-400/60 px-3 py-2 text-[10px] uppercase tracking-widest transition-colors cursor-pointer"
-          >
-            <LogOut className="w-3 h-3" />
-            Sign Out
-          </button>
         </div>
       </section>
     </aside>

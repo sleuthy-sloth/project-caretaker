@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Terminal, LogEntry } from './components/Terminal';
 import { useCaretakerAI, AIResponse, ChatHistoryMessage } from './hooks/useCaretakerAI';
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
-import { signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, signInAnonymously, getRedirectResult, linkWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Skull, AlertTriangle, RotateCcw, Ship, LogOut, PanelLeft, X, Map as MapIcon } from 'lucide-react';
 
@@ -42,6 +42,7 @@ export default function App() {
   const [showMap, setShowMap] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
+  const [isAnonymous, setIsAnonymous] = useState(false);
 
   const initializationTriggered = useRef(false);
   const lastCommandRef = useRef<string>("");
@@ -56,28 +57,26 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+      setIsAnonymous(currentUser?.isAnonymous ?? false);
       setAuthInitialized(true);
     });
     return () => unsubscribe();
   }, []);
 
+  const provider = useRef(new GoogleAuthProvider()).current;
+
   const handleLogin = async () => {
     setAuthError(null);
     setAuthLoading(true);
-    const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
     } catch (e: any) {
       const code = e?.code || '';
       if (code === 'auth/popup-blocked' || code === 'auth/popup-closed-by-user') {
-        // Popup failed — fall back to redirect which works with all popup blockers
-        setAuthError('Popup was blocked. Redirecting to Google sign-in...');
-        try {
-          await signInWithRedirect(auth, provider);
-        } catch (redirectErr) {
-          console.error('Redirect auth also failed:', redirectErr);
-          setAuthError('Sign-in failed. Check console for details and try again.');
-        }
+        setAuthError(
+          'Popup was blocked by your browser. ' +
+          'Either allow popups for this site, or use the redirect method below.'
+        );
       } else if (code === 'auth/unauthorized-domain') {
         setAuthError(
           'This domain is not authorized for Firebase sign-in. ' +
@@ -95,7 +94,54 @@ export default function App() {
     }
   };
 
-  // Handle redirect-based sign-in (popup blocker fallback)
+  const handleRedirectLogin = async () => {
+    setAuthError(null);
+    setAuthLoading(true);
+    try {
+      await signInWithRedirect(auth, provider);
+    } catch (e: any) {
+      console.error('Redirect auth failed:', e);
+      setAuthError('Sign-in redirect failed. Check console for details.');
+      setAuthLoading(false);
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    setAuthError(null);
+    setAuthLoading(true);
+    try {
+      await signInAnonymously(auth);
+    } catch (e: any) {
+      console.error('Guest login error:', e);
+      setAuthError(e?.message || 'Guest login failed. Check Firebase Console to ensure Anonymous Authentication is enabled.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLinkAccount = async () => {
+    if (!auth.currentUser) return;
+    setAuthError(null);
+    setAuthLoading(true);
+    try {
+      await linkWithPopup(auth.currentUser, provider);
+      // Account linked — isAnonymous will flip to false via onAuthStateChanged
+    } catch (e: any) {
+      const code = e?.code || '';
+      if (code === 'auth/popup-blocked' || code === 'auth/popup-closed-by-user') {
+        setAuthError('Popup was blocked. Please allow popups for this site to link your account.');
+      } else if (code === 'auth/credential-already-in-use') {
+        setAuthError('This Google account is already linked to another session. Sign out first.');
+      } else {
+        console.error('Link account error:', e);
+        setAuthError(e?.message || 'Failed to link account.');
+      }
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // Handle redirect-based sign-in (explicit user choice)
   useEffect(() => {
     getRedirectResult(auth).then((result) => {
       if (result) {
@@ -103,7 +149,17 @@ export default function App() {
         setAuthError(null);
       }
     }).catch((err) => {
+      const code = err?.code || '';
       console.error('Redirect sign-in error:', err);
+      if (code === 'auth/unauthorized-domain') {
+        setAuthError(
+          'This domain is not authorized for Firebase sign-in. ' +
+          'Go to Firebase Console → Authentication → Settings → ' +
+          'Authorized domains and add this domain.'
+        );
+      } else {
+        setAuthError(err?.message || 'Redirect sign-in failed. Please try the popup method instead.');
+      }
     });
   }, []);
 
@@ -329,7 +385,15 @@ export default function App() {
   }
 
   if (!user) {
-    return <SystemLockScreen authError={authError} authLoading={authLoading} handleLogin={handleLogin} />;
+    return (
+      <SystemLockScreen
+        authError={authError}
+        authLoading={authLoading}
+        handleLogin={handleLogin}
+        handleRedirectLogin={handleRedirectLogin}
+        handleGuestLogin={handleGuestLogin}
+      />
+    );
   }
 
   return (
@@ -404,7 +468,9 @@ export default function App() {
           isCloudMode={isCloudMode}
           activeModel={activeModel}
           user={user}
+          isAnonymous={isAnonymous}
           handleSignOut={handleSignOut}
+          handleLinkAccount={handleLinkAccount}
         />
 
         {/* Terminal area */}
